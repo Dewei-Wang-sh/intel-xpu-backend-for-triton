@@ -131,6 +131,9 @@
 #define i32_arr_attr(...) rewriter.getI32ArrayAttr({__VA_ARGS__})
 #define i64_arr_attr(...) rewriter.getI64ArrayAttr({__VA_ARGS__})
 
+// debug utils
+#define KERNEL_PRINTF(fmt, ...) LLVM::KernelPrintf(rewriter, fmt, __VA_ARGS__)
+
 namespace mlir {
 namespace triton {
 
@@ -415,6 +418,8 @@ Value getSRegValue(OpBuilder &b, Location loc, const std::string &sRegStr);
 Value addStringToModule(Location loc, ConversionPatternRewriter &rewriter,
                         StringRef key, StringRef content,
                         unsigned addressSpace);
+
+Value KernelPrintf(ConversionPatternRewriter &rewriter, StringRef msg, ValueRange args);
 
 } // namespace LLVM
 } // namespace mlir
