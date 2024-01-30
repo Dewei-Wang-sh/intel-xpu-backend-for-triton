@@ -113,14 +113,6 @@ static const Fp8ConversionDesc Fp8E5M2_to_Fp16(bool hasNativeFP) {
   return ret;
 }
 
-static inline float int32_to_fp32(uint32_t val) {
-  union {
-    uint32_t as_bits;
-    float as_value;
-  } fp32 = {val};
-  return fp32.as_value;
-}
-
 static SmallVector<Value>
 Fp8E5M2_to_Bf16_func(Location loc, ConversionPatternRewriter &rewriter,
                      const SmallVector<Value> &v) {
@@ -149,10 +141,10 @@ Fp8E5M2_to_Bf16_func(Location loc, ConversionPatternRewriter &rewriter,
   Value c2 = and_(i32_ty, b1, i32_val(0xffff0000));
   Value c3 = shl(i32_ty, b1, i32_val(16));
 
-  Value cmp0 = icmp_eq(c0, i32_val(0));
-  Value cmp1 = icmp_eq(c1, i32_val(0));
-  Value cmp2 = icmp_eq(c2, i32_val(0));
-  Value cmp3 = icmp_eq(c3, i32_val(0));
+  Value cmp0 = icmp_eq(and_(c0, i32_val(0xf800000)), i32_val(0));
+  Value cmp1 = icmp_eq(and_(c1, i32_val(0xf800000)), i32_val(0));
+  Value cmp2 = icmp_eq(and_(c2, i32_val(0xf800000)), i32_val(0));
+  Value cmp3 = icmp_eq(and_(c3, i32_val(0xf800000)), i32_val(0));
 
   Value d0 = select(cmp0, i32_val(0), i32_val(0x38000000));
   Value d1 = select(cmp1, i32_val(0), i32_val(0x38000000));
