@@ -149,26 +149,30 @@ Fp8E5M2_to_Bf16_func(Location loc, ConversionPatternRewriter &rewriter,
   Value c2 = and_(i32_ty, b1, i32_val(0xffff0000));
   Value c3 = shl(i32_ty, b1, i32_val(16));
 
-  Value f0 =
-      fmul(f32_ty, bitcast(c0, f32_ty), f32_val(int32_to_fp32(0x77800000)));
-  Value f1 =
-      fmul(f32_ty, bitcast(c1, f32_ty), f32_val(int32_to_fp32(0x77800000)));
-  Value f2 =
-      fmul(f32_ty, bitcast(c2, f32_ty), f32_val(int32_to_fp32(0x77800000)));
-  Value f3 =
-      fmul(f32_ty, bitcast(c3, f32_ty), f32_val(int32_to_fp32(0x77800000)));
+  Value cmp0 = icmp_eq(c0, i32_val(0));
+  Value cmp1 = icmp_eq(c1, i32_val(0));
+  Value cmp2 = icmp_eq(c2, i32_val(0));
+  Value cmp3 = icmp_eq(c3, i32_val(0));
 
-  Value d0 = or_(i32_ty, bitcast(f0, i32_ty), lshr(i32_ty, c1, i32_val(16)));
-  Value d1 = or_(i32_ty, bitcast(f2, i32_ty), lshr(i32_ty, c3, i32_val(16)));
+  Value d0 = select(cmp0, i32_val(0), i32_val(0x38000000));
+  Value d1 = select(cmp1, i32_val(0), i32_val(0x38000000));
+  Value d2 = select(cmp2, i32_val(0), i32_val(0x38000000));
+  Value d3 = select(cmp3, i32_val(0), i32_val(0x38000000));
 
-  // b0 = add(i32_ty, b0, i32_val(0x38003800));
-  // b1 = add(i32_ty, b1, i32_val(0x38003800));
+  c0 = add(i32_ty, c0, d0);
+  c1 = add(i32_ty, c1, d1);
+  c2 = add(i32_ty, c2, d2);
+  c3 = add(i32_ty, c3, d3);
+
+  Value f0 = or_(i32_ty, c0, lshr(i32_ty, c1, i32_val(16)));
+  Value f1 = or_(i32_ty, c2, lshr(i32_ty, c3, i32_val(16)));
+
   Value sign0 = and_(i32_ty, a0, i32_val(0x80008000));
   Value sign1 = and_(i32_ty, a1, i32_val(0x80008000));
 
   auto bf16x2VecTy = vec_ty(i16_ty, 2);
-  Value bf16x2Vec0 = or_(i32_ty, sign0, d0);
-  Value bf16x2Vec1 = or_(i32_ty, sign1, d1);
+  Value bf16x2Vec0 = or_(i32_ty, sign0, f0);
+  Value bf16x2Vec1 = or_(i32_ty, sign1, f1);
   bf16x2Vec0 = bitcast(bf16x2Vec0, bf16x2VecTy);
   bf16x2Vec1 = bitcast(bf16x2Vec1, bf16x2VecTy);
 
