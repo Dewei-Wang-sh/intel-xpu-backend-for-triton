@@ -113,6 +113,14 @@ static const Fp8ConversionDesc Fp8E5M2_to_Fp16(bool hasNativeFP) {
   return ret;
 }
 
+static inline float int32_to_fp32(uint32_t val) {
+  union {
+    uint32_t as_bits;
+    float as_value;
+  } fp32 = {val};
+  return fp32.as_value;
+}
+
 static SmallVector<Value>
 Fp8E5M2_to_Bf16_func(Location loc, ConversionPatternRewriter &rewriter,
                      const SmallVector<Value> &v) {
@@ -136,14 +144,31 @@ Fp8E5M2_to_Bf16_func(Location loc, ConversionPatternRewriter &rewriter,
   b0 = lshr(i32_ty, b0, i32_val(3));
   b1 = lshr(i32_ty, b1, i32_val(3));
 
-  b0 = add(i32_ty, b0, i32_val(0x38003800));
-  b1 = add(i32_ty, b1, i32_val(0x38003800));
+  Value c0 = and_(i32_ty, b0, i32_val(0xffff0000));
+  Value c1 = shl(i32_ty, b0, i32_val(16));
+  Value c2 = and_(i32_ty, b1, i32_val(0xffff0000));
+  Value c3 = shl(i32_ty, b1, i32_val(16));
+
+  Value f0 =
+      fmul(f32_ty, bitcast(c0, f32_ty), f32_val(int32_to_fp32(0x77800000)));
+  Value f1 =
+      fmul(f32_ty, bitcast(c1, f32_ty), f32_val(int32_to_fp32(0x77800000)));
+  Value f2 =
+      fmul(f32_ty, bitcast(c2, f32_ty), f32_val(int32_to_fp32(0x77800000)));
+  Value f3 =
+      fmul(f32_ty, bitcast(c3, f32_ty), f32_val(int32_to_fp32(0x77800000)));
+
+  Value d0 = or_(i32_ty, bitcast(f0, i32_ty), lshr(i32_ty, c1, i32_val(16)));
+  Value d1 = or_(i32_ty, bitcast(f2, i32_ty), lshr(i32_ty, c3, i32_val(16)));
+
+  // b0 = add(i32_ty, b0, i32_val(0x38003800));
+  // b1 = add(i32_ty, b1, i32_val(0x38003800));
   Value sign0 = and_(i32_ty, a0, i32_val(0x80008000));
   Value sign1 = and_(i32_ty, a1, i32_val(0x80008000));
 
   auto bf16x2VecTy = vec_ty(i16_ty, 2);
-  Value bf16x2Vec0 = or_(i32_ty, sign0, b0);
-  Value bf16x2Vec1 = or_(i32_ty, sign1, b1);
+  Value bf16x2Vec0 = or_(i32_ty, sign0, d0);
+  Value bf16x2Vec1 = or_(i32_ty, sign1, d1);
   bf16x2Vec0 = bitcast(bf16x2Vec0, bf16x2VecTy);
   bf16x2Vec1 = bitcast(bf16x2Vec1, bf16x2VecTy);
 
