@@ -1,10 +1,12 @@
 #include "../TritonGPUToLLVMBase.h"
 #include "../Utility.h"
 #include "mlir/Dialect/LLVMIR/LLVMTypes.h"
+#include "triton/Dialect/TritonIntelGPU/IR/Dialect.h"
 #include "llvm/Support/ErrorHandling.h"
 
 using ValueTable = std::map<std::pair<int, int>, Value>;
 using ::mlir::triton::gpu::SharedEncodingAttr;
+using ::mlir::triton::gpu::intel::DpasEncodingAttr;
 
 namespace {
 
@@ -26,8 +28,7 @@ public:
                            smemStrides[kDim ^ 1]);
     warpMatStride = mul(i32_val(instrShape[kDim ^ 1]), smemStrides[kDim ^ 1]);
 
-    unsigned opsPerChannel =
-        dpasLayout.getOpsPerChannel(tensorTy.getElementType());
+    unsigned opsPerChannel = dpasLayout.getOpsPerChan();
     unsigned threadsPerWarp = getThreadsPerWarp();
 
     int rowsPerWarp =
@@ -80,8 +81,7 @@ DpasMatmulLoader<opIdx>::computeLdsMatOffs(Value warpId, Value laneId,
   unsigned systolicDepth = dpasLayout.getSystolicDepth();
   unsigned repeatCount = dpasLayout.getRepeatCount();
   unsigned executionSize = dpasLayout.getExecutionSize();
-  unsigned opsPerChannel =
-      dpasLayout.getOpsPerChannel(tensorTy.getElementType());
+  unsigned opsPerChannel = dpasLayout.getOpsPerChan();
   unsigned threadsPerWarp = getThreadsPerWarp();
 
   Value laneRowIndex, laneColIndex;
@@ -262,7 +262,8 @@ getLoadMatrixFn(Value tensor, const SharedMemoryObject &smemObj,
     unsigned threadsPerWarp = product<unsigned>(getThreadsPerWarp(dpasLayout));
     auto matTy = LLVM::LLVMStructType::getLiteral(
         eltTy.getContext(),
-        SmallVector<Type>(totalElem / threadsPerWarp, eltTy));
+        SmallVector<Type>(totalElem / threadsPerWarp,
+                          typeConverter->convertType(eltTy)));
 
     vals[{a, b}] = loader.loadMatrix(a, b, ptrs, matTy, smemTy, cSwizzleOffset);
   };
@@ -279,16 +280,20 @@ Value loadOperand(ConversionPatternRewriter &rewriter, Location loc,
 
   auto dpasLayout = encoding.getParent().cast<DpasEncodingAttr>();
   const SmallVector<unsigned> warpsPerCTA = dpasLayout.getWarpsPerCTA();
+  auto order = triton::gpu::getOrder(dpasLayout);
 
   auto tensorTy = tensor.getType().cast<RankedTensorType>();
   const ArrayRef<int64_t> tensorShape = tensorTy.getShape();
-  auto sharedLayout = tensorTy.getEncoding().cast<SharedEncodingAttr>();
-  const ArrayRef<unsigned> order = sharedLayout.getOrder();
 
-  Type elemTy = tensorTy.getElementType();
-  SmallVector<int64_t> elemsPerInstr =
-      encoding.getDPASElemsPerInstr(elemTy.getIntOrFloatBitWidth());
-  SmallVector<int64_t> numReps = encoding.getDPASRep(tensorShape, elemTy);
+  SmallVector<int64_t> elemsPerInstr;
+  if constexpr (opIdx == 0) {
+    auto shapeA = dpasLayout.getShapeA();
+    elemsPerInstr = {shapeA[0], shapeA[1]};
+  } else {
+    auto shapeB = dpasLayout.getShapeB();
+    elemsPerInstr = {shapeB[0], shapeB[1]};
+  }
+  SmallVector<int64_t> numReps = dpasLayout.getXMXRep(tensorShape, opIdx);
 
   Value warpSize = i32_val(triton::gpu::getWarpSize(dpasLayout));
   Value warpId = udiv(threadId, warpSize);

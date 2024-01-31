@@ -428,7 +428,12 @@ class XPUBackend(BaseBackend):
         intel.passes.ttnvgpuir.add_plan_cta(pm, cluster_info)
         passes.ttgpuir.add_remove_layout_conversions(pm)
         passes.ttgpuir.add_optimize_thread_locality(pm)
-        passes.ttgpuir.add_accelerate_matmul(pm, capability)
+        arch = intel.DEVICE_ARCH.UNKNOWN.value
+        if capability == intel.DEVICE_ARCH.ATS.value:
+            arch = intel.DEVICE_ARCH.ATS
+        elif capability == intel.DEVICE_ARCH.PVC.value:
+            arch = intel.DEVICE_ARCH.PVC
+        intel.passes.ttgpuir.add_accelerate_matmul(pm, arch)
         passes.ttgpuir.add_remove_layout_conversions(pm)
         if opt.optimize_epilogue:
             passes.ttgpuir.add_optimize_epilogue(pm)

@@ -8,6 +8,7 @@
 #include "triton/Dialect/NVGPU/IR/Dialect.h"
 #include "triton/Dialect/TritonNvidiaGPU/IR/Dialect.h"
 #include "triton/Dialect/TritonNvidiaGPU/Transforms/Passes.h"
+#include "triton/Dialect/TritonIntelGPU/Transforms/Passes.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/Support/TargetSelect.h"
 #include <pybind11/pybind11.h>
@@ -28,7 +29,11 @@ void init_triton_intel_passes_ttgpuir(py::module &&m) {
                             mlir::triton::gpu::TMAMetadataTy *tmaMetadata) {
     pm.addPass(createConvertTritonGPUToLLVMPass(capability, mlir::triton::GENX,
                                                 tmaMetadata));
-  });
+  })
+  .def("add_accelerate_matmul", [](mlir::PassManager &self, mlir::triton::gpu::intel::DeviceArch arch) {
+     self.addPass(
+         mlir::createTritonIntelGPUAccelerateMatmulPass(arch));
+   });
 }
 
 void init_triton_intel_passes_ttnvgpuir(py::module &&m) {
@@ -64,6 +69,15 @@ void init_triton_intel(py::module &&m){
   auto passes = m.def_submodule("passes");
   init_triton_intel_passes_ttgpuir(passes.def_submodule("ttgpuir"));
   init_triton_intel_passes_ttnvgpuir(passes.def_submodule("ttnvgpuir"));
+
+
+  // Device arch
+  py::enum_<mlir::triton::gpu::intel::DeviceArch>(m, "DEVICE_ARCH",
+                                         py::module_local())
+      .value("ATS", mlir::triton::gpu::intel::DeviceArch::ATS)
+      .value("PVC", mlir::triton::gpu::intel::DeviceArch::PVC)
+      .value("UNKNOWN", mlir::triton::gpu::intel::DeviceArch::UNKNOWN)
+      .export_values();
 
   // cluster info
   py::class_<mlir::triton::nvidia_gpu::ClusterInfo>(m, "ClusterInfo")

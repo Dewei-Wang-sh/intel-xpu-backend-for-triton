@@ -2,6 +2,7 @@
 #include "Utility.h"
 
 #include "triton/Dialect/TritonGPU/Transforms/Utility.h"
+#include "triton/Dialect/TritonIntelGPU/IR/Dialect.h"
 #include "triton/Dialect/TritonNvidiaGPU/Transforms/Utility.h"
 
 using ::mlir::LLVM::getSharedMemoryObjectFromStruct;
@@ -18,7 +19,9 @@ using ::mlir::triton::gpu::getShapePerCTATile;
 using ::mlir::triton::gpu::getSizePerThread;
 using ::mlir::triton::gpu::getTotalElemsPerThread;
 using ::mlir::triton::gpu::isaDistributedLayout;
+using ::mlir::triton::gpu::MmaEncodingTrait;
 using ::mlir::triton::gpu::SharedEncodingAttr;
+using ::mlir::triton::gpu::intel::DpasEncodingAttr;
 
 // Forward declarations
 
@@ -245,16 +248,66 @@ private:
       }
       return multiDimOffset;
     }
-    if (auto dpasLayout = layout.dyn_cast<DpasEncodingAttr>()) {
-      SmallVector<Value> multiDimBase =
-          emitBaseIndexForLayout(loc, rewriter, layout, type, false);
-      SmallVector<SmallVector<unsigned>> offsets;
-      emitDpasOffsetForCTA(dpasLayout, offsets, multiDimCTAInRepId[0],
-                           multiDimCTAInRepId[1]);
+    if (auto mmaLayout =
+            layout.dyn_cast<triton::gpu::intel::DpasEncodingAttr>()) {
+#if 0
+      llvm::outs() << "johnlu getMultiDimOffset elemId: " << elemId << "\n";
+      llvm::outs() << "johnlu getMultiDimOffset multiDimCTAInRepId: ";
+      for (auto &i : multiDimCTAInRepId) {
+        llvm::outs() << " " << i;
+      }
+      llvm::outs() << "\n";
+      llvm::outs().flush();
+      llvm::outs() << "johnlu getMultiDimOffset shapePerCTATile: ";
+      for (auto &i : shapePerCTATile) {
+        llvm::outs() << " " << i;
+      }
+      llvm::outs() << "\n";
+      llvm::outs().flush();
+#endif
+      Value threadId = getThreadId(rewriter, loc);
+      unsigned threadsPerWarp =
+          product<unsigned>(mmaLayout.getThreadsPerWarp());
+      Value laneId = urem(threadId, i32_val(threadsPerWarp));
+      Value warpId = udiv(threadId, i32_val(threadsPerWarp));
+      auto warpsPerCTA = mmaLayout.getWarpsPerCTA();
+      auto order = triton::gpu::getOrder(mmaLayout);
+      SmallVector<Value> multiDimWarpId =
+          delinearize(rewriter, loc, warpId, warpsPerCTA, order);
+      auto shapeC = mmaLayout.getShapeC();
+      Value warpM =
+          urem(multiDimWarpId[0], i32_val(ceil(shape[0] / shapeC[0])));
+      Value warpN =
+          urem(multiDimWarpId[1], i32_val(ceil(shape[1] / shapeC[1])));
+      Value rowWarpIndex = mul(warpM, i32_val(shapeC[0]));
+      Value colWarpIndex = mul(warpN, i32_val(shapeC[1]));
 
-      SmallVector<Value> multiDimOffset = {
-          add(multiDimBase[0], i32_val(offsets[elemId][0])),
-          add(multiDimBase[1], i32_val(offsets[elemId][1]))};
+      // clang-format off
+      // For C operand sub-group size 16:
+      //               execution size = 16
+      // <------------------------------------------------------------->
+      // t0  t1  t2  t3  t4  t5  t6  t7  t8  t9  t10 t11 t12 t13 t14 t15       ^
+      // t0  t1  t2  t3  t4  t5  t6  t7  t8  t9  t10 t11 t12 t13 t14 t15       |
+      // .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .         | repeat count = 8
+      // .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .         |
+      // t0  t1  t2  t3  t4  t5  t6  t7  t8  t9  t10 t11 t12 t13 t14 t15       |
+      // t0  t1  t2  t3  t4  t5  t6  t7  t8  t9  t10 t11 t12 t13 t14 t15       v
+      // clang-format on
+      Value laneRowIndex = udiv(laneId, i32_val(mmaLayout.getExecutionSize()));
+      Value laneColIndex = urem(laneId, i32_val(mmaLayout.getExecutionSize()));
+      auto sizePerThreads = getSizePerThread(mmaLayout);
+      assert(rank == 2);
+      int rowsPerWarp;
+      rowsPerWarp = threadsPerWarp / mmaLayout.getExecutionSize();
+      Value elemRowIndex = i32_val((elemId / sizePerThreads[1]) * rowsPerWarp);
+      Value elemColIndex = i32_val(elemId % sizePerThreads[1]);
+      SmallVector<Value> multiDimOffset(rank);
+      multiDimOffset[0] = add(add(rowWarpIndex, laneRowIndex), elemRowIndex);
+      multiDimOffset[1] = add(add(colWarpIndex, laneColIndex), elemColIndex);
+      multiDimOffset[0] = add(multiDimOffset[0], i32_val(multiDimCTAInRepId[0] *
+                                                         shapePerCTATile[0]));
+      multiDimOffset[1] = add(multiDimOffset[1], i32_val(multiDimCTAInRepId[1] *
+                                                         shapePerCTATile[1]));
       return multiDimOffset;
     }
     llvm_unreachable("unexpected layout in getMultiDimOffset");
@@ -655,8 +708,7 @@ private:
       }
       if (srcLayout.isa<BlockedEncodingAttr>() ||
           srcLayout.isa<SliceEncodingAttr>() ||
-          srcLayout.isa<DpasEncodingAttr>() ||
-          srcLayout.isa<NvidiaMmaEncodingAttr>()) {
+          srcLayout.isa<MmaEncodingTrait>()) {
         if (isSrcMmaV1)
           processReplicaForMMAV1(loc, rewriter, /*stNotRd*/ true, srcTy,
                                  multiDimRepId, inVec, paddedRepShape, outOrd,
@@ -696,8 +748,7 @@ private:
       }
       if (dstLayout.isa<BlockedEncodingAttr>() ||
           dstLayout.isa<SliceEncodingAttr>() ||
-          dstLayout.isa<DpasEncodingAttr>() ||
-          dstLayout.isa<NvidiaMmaEncodingAttr>()) {
+          dstLayout.isa<MmaEncodingTrait>()) {
         if (isDstMmaV1)
           processReplicaForMMAV1(loc, rewriter, /*stNotRd*/ false, dstTy,
                                  multiDimRepId, outVec, paddedRepShape, outOrd,
@@ -916,17 +967,20 @@ private:
     isOuter = K == 1;
 
     Value res;
-    if (auto mmaLayout = dotOperandLayout.getParent()
-                             .dyn_cast_or_null<NvidiaMmaEncodingAttr>()) {
+    if (auto mmaLayout =
+            dotOperandLayout.getParent()
+                .dyn_cast_or_null<triton::gpu::MmaEncodingTrait>()) {
       res = lowerSharedToDotOperandMMA(op, adaptor, rewriter, mmaLayout,
                                        dotOperandLayout, isOuter);
-    } else if (auto dpasLayout = dotOperandLayout.getParent()
-                                     .dyn_cast_or_null<DpasEncodingAttr>()) {
-      res = lowerSharedToDotOperandDPAS(op, adaptor, rewriter, dpasLayout,
-                                        dotOperandLayout, isOuter);
-    } else if (auto blockedLayout =
-                   dotOperandLayout.getParent()
-                       .dyn_cast_or_null<BlockedEncodingAttr>()) {
+    }
+    /* else if (auto dpasLayout = dotOperandLayout.getParent()
+                                      .dyn_cast_or_null<DpasEncodingAttr>()) {
+       res = lowerSharedToDotOperandDPAS(op, adaptor, rewriter, dpasLayout,
+                                         dotOperandLayout, isOuter);
+     } */
+    else if (auto blockedLayout =
+                 dotOperandLayout.getParent()
+                     .dyn_cast_or_null<BlockedEncodingAttr>()) {
       auto dotOpLayout =
           dstTensorTy.getEncoding().cast<DotOperandEncodingAttr>();
       auto thread = getThreadId(rewriter, loc);
@@ -1055,13 +1109,12 @@ private:
   Value
   lowerSharedToDotOperandMMA(triton::gpu::ConvertLayoutOp op, OpAdaptor adaptor,
                              ConversionPatternRewriter &rewriter,
-                             const NvidiaMmaEncodingAttr &mmaLayout,
+                             const triton::gpu::MmaEncodingTrait &mmaLayout,
                              const DotOperandEncodingAttr &dotOperandLayout,
                              bool isOuter) const {
     auto loc = op.getLoc();
     Value src = op.getSrc();
     Value dst = op.getResult();
-    bool isMMA = supportMMA(dst, mmaLayout.getVersionMajor());
 
     auto llvmElemTy = getTypeConverter()->convertType(
         src.getType().cast<RankedTensorType>().getElementType());
@@ -1069,27 +1122,44 @@ private:
     auto smemObj = getSharedMemoryObjectFromStruct(loc, adaptor.getSrc(),
                                                    llvmElemTy, rewriter);
     Value res;
-    if (!isOuter && mmaLayout.isAmpere()) { // tensor core v2
-      res = SharedToDotOperandMMAv2::convertLayout(
+    if (auto nvMMALayout = dotOperandLayout.getParent()
+                               .dyn_cast_or_null<NvidiaMmaEncodingAttr>()) {
+      bool isMMA = supportMMA(dst, nvMMALayout.getVersionMajor());
+
+      if (!isOuter && nvMMALayout.isAmpere()) { // tensor core v2
+        res = SharedToDotOperandMMAv2::convertLayout(
+            dotOperandLayout.getOpIdx(), rewriter, loc, src, dotOperandLayout,
+            smemObj, getTypeConverter(), getThreadId(rewriter, loc));
+      } else if (!isOuter && nvMMALayout.isVolta() && isMMA) { // tensor core v1
+        bool isMMAv1Row =
+            nvMMALayout.getMMAv1IsRow(dotOperandLayout.getOpIdx());
+        auto srcSharedLayout = src.getType()
+                                   .cast<RankedTensorType>()
+                                   .getEncoding()
+                                   .cast<SharedEncodingAttr>();
+
+        // Can only convert [1, 0] to row or [0, 1] to col for now
+        if ((srcSharedLayout.getOrder()[0] == 1 && !isMMAv1Row) ||
+            (srcSharedLayout.getOrder()[0] == 0 && isMMAv1Row)) {
+          llvm::errs()
+              << "Unsupported Shared -> DotOperand[MMAv1] conversion\n";
+          return Value();
+        }
+
+        res = SharedToDotOperandMMAv1::convertLayout(
+            dotOperandLayout.getOpIdx(), src, smemObj,
+            getThreadId(rewriter, loc), loc, getTypeConverter(), rewriter,
+            dst.getType());
+      } else {
+        assert(false && "Unsupported mma layout found");
+      }
+    } else if (auto intelMMALayout =
+                   dotOperandLayout.getParent()
+                       .dyn_cast_or_null<
+                           triton::gpu::intel::DpasEncodingAttr>()) {
+      res = SharedToDotOperandDPAS::convertLayout(
           dotOperandLayout.getOpIdx(), rewriter, loc, src, dotOperandLayout,
           smemObj, getTypeConverter(), getThreadId(rewriter, loc));
-    } else if (!isOuter && mmaLayout.isVolta() && isMMA) { // tensor core v1
-      bool isMMAv1Row = mmaLayout.getMMAv1IsRow(dotOperandLayout.getOpIdx());
-      auto srcSharedLayout = src.getType()
-                                 .cast<RankedTensorType>()
-                                 .getEncoding()
-                                 .cast<SharedEncodingAttr>();
-
-      // Can only convert [1, 0] to row or [0, 1] to col for now
-      if ((srcSharedLayout.getOrder()[0] == 1 && !isMMAv1Row) ||
-          (srcSharedLayout.getOrder()[0] == 0 && isMMAv1Row)) {
-        llvm::errs() << "Unsupported Shared -> DotOperand[MMAv1] conversion\n";
-        return Value();
-      }
-
-      res = SharedToDotOperandMMAv1::convertLayout(
-          dotOperandLayout.getOpIdx(), src, smemObj, getThreadId(rewriter, loc),
-          loc, getTypeConverter(), rewriter, dst.getType());
     } else {
       assert(false && "Unsupported mma layout found");
     }
@@ -1097,29 +1167,30 @@ private:
   }
 
   // shared -> dot_operand if the result layout is dpas
-  Value lowerSharedToDotOperandDPAS(
-      triton::gpu::ConvertLayoutOp op, OpAdaptor adaptor,
-      ConversionPatternRewriter &rewriter, const DpasEncodingAttr &dpasLayout,
-      const DotOperandEncodingAttr &dotOperandLayout, bool isOuter) const {
-    auto loc = op.getLoc();
-    Value src = op.getSrc();
-    Value dst = op.getResult();
-
-    auto llvmElemTy = getTypeConverter()->convertType(
-        src.getType().cast<RankedTensorType>().getElementType());
-
-    auto smemObj = getSharedMemoryObjectFromStruct(loc, adaptor.getSrc(),
-                                                   llvmElemTy, rewriter);
-    Value res;
-    if (!isOuter) {
-      res = SharedToDotOperandDPAS::convertLayout(
-          dotOperandLayout.getOpIdx(), rewriter, loc, src, dotOperandLayout,
-          smemObj, getTypeConverter(), tid_val());
-    } else {
-      assert(false && "unsupported layout found");
-    }
-    return res;
-  }
+  //  Value lowerSharedToDotOperandDPAS(
+  //      triton::gpu::ConvertLayoutOp op, OpAdaptor adaptor,
+  //      ConversionPatternRewriter &rewriter, const DpasEncodingAttr
+  //      &dpasLayout, const DotOperandEncodingAttr &dotOperandLayout, bool
+  //      isOuter) const {
+  //    auto loc = op.getLoc();
+  //    Value src = op.getSrc();
+  //    Value dst = op.getResult();
+  //
+  //    auto llvmElemTy = getTypeConverter()->convertType(
+  //        src.getType().cast<RankedTensorType>().getElementType());
+  //
+  //    auto smemObj = getSharedMemoryObjectFromStruct(loc, adaptor.getSrc(),
+  //                                                   llvmElemTy, rewriter);
+  //    Value res;
+  //    if (!isOuter) {
+  //      res = SharedToDotOperandDPAS::convertLayout(
+  //          dotOperandLayout.getOpIdx(), rewriter, loc, src, dotOperandLayout,
+  //          smemObj, getTypeConverter(), tid_val());
+  //    } else {
+  //      assert(false && "unsupported layout found");
+  //    }
+  //    return res;
+  //  }
 };
 } // namespace
 

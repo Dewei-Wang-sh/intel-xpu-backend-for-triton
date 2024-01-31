@@ -18,7 +18,6 @@ using tt::DotOp;
 using ttg::BlockedEncodingAttr;
 using ttg::ConvertLayoutOp;
 using ttg::DotOperandEncodingAttr;
-using ttg::DpasEncodingAttr;
 using ttg::NvidiaMmaEncodingAttr;
 using ttg::SliceEncodingAttr;
 
@@ -381,17 +380,6 @@ static void decomposeMixedModeDotOp(ModuleOp mod) {
       if (!isFP8 || (isNativeHopperFP8 && mmaLayout.isHopper()))
         return;
       promoteType = builder.getF16Type();
-    } else if (auto dpasLayout = D.getType()
-                                     .cast<RankedTensorType>()
-                                     .getEncoding()
-                                     .dyn_cast<DpasEncodingAttr>()) {
-      Type BElType =
-          dotOp.getB().getType().cast<RankedTensorType>().getElementType();
-
-      auto maxBitWidth = std::max(AElType.getIntOrFloatBitWidth(),
-                                  BElType.getIntOrFloatBitWidth());
-
-      return;
     } else {
       // FMA case.
       Type AElType =
