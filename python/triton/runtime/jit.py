@@ -365,7 +365,7 @@ class JITFunction(KernelInterface[T]):
         sig_key = tuple(arg.signature_key() for arg in args if not arg.param.is_constexpr)
         spec_key = tuple(arg.specialization_key() for arg in args if not arg.param.do_not_specialize)
         constexpr_key = tuple(arg.value for arg in args if arg.param.is_constexpr)
-        key = (sig_key, constexpr_key, spec_key, options)
+        key = (sig_key, constexpr_key, spec_key, options.hash())
         # Kernel is not cached; we have to compile.
         if key not in self.cache[device]:
             configs = (self._get_config(*[arg.value for arg in args]), )

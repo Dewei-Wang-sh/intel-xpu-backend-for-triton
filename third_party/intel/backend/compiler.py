@@ -337,6 +337,7 @@ class XPUOptions:
     num_ctas: int = 1
     num_stages: int = 2
     cluster_dims: tuple = (1, 1, 1)
+    threads_per_warp: int = 16
     ptx_version: int = None
     enable_warp_specialization: bool = False
     enable_persistent: bool = False
@@ -369,11 +370,24 @@ class XPUBackend(BaseBackend):
 
     def __init__(self, target: tuple) -> None:
         super().__init__(target)
-        self.capability = target[1]
+        self.properties = target[1]
+        self.capability = self.properties["device_arch"]
         assert isinstance(self.capability, int)
 
     def parse_options(self, opts) -> Any:
         args = {k: opts[k] for k in XPUOptions.__dataclass_fields__.keys() if k in opts}
+        properties = self.properties
+        threads_per_warp = args['threads_per_warp'] if 'threads_per_warp' in args else 16
+        subgroup_sizes = properties['subgroup_sizes']
+        assert threads_per_warp in subgroup_sizes, "Device '{}' does not support threads_per_warp {}".format(
+            self.target[0],
+            threads_per_warp)  # noqa: E501
+
+        max_work_group_size = properties['max_group_size']
+        num_warps = args['num_warps'] if 'num_warps' in args else max_work_group_size // threads_per_warp
+
+        args['num_warps'] = num_warps
+        args['threads_per_warp'] = threads_per_warp
         args["allow_fp8e4nv"] = True
         args["max_num_imprecise_acc_default"] = 2**30 if self.capability == 90 else 0
         return XPUOptions(**args)
@@ -405,7 +419,7 @@ class XPUBackend(BaseBackend):
         # TTIR -> TTGIR
         pm = ir.pass_manager(mod.context)
         pm.enable_debug()
-        passes.ttir.add_convert_to_ttgpuir(pm, opt.num_warps, 32, opt.num_ctas, capability)
+        passes.ttir.add_convert_to_ttgpuir(pm, opt.num_warps, opt.threads_per_warp, opt.num_ctas, capability)
         # optimize TTGIR
         passes.ttgpuir.add_coalesce(pm)
         # TODO(Qingyi): Move PlanCTAPass to the front of CoalescePass
