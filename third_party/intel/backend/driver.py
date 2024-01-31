@@ -178,7 +178,7 @@ def make_launcher(constants, signature, ids):
 
     #define ZE_CHECK(ans) {{ gpuAssert((ans), __FILE__, __LINE__); }}
 
-    static void _regular_launch(uint32_t gridX, uint32_t gridY, uint32_t gridZ, int num_warps, int shared_memory,
+    static void _regular_launch(uint32_t gridX, uint32_t gridY, uint32_t gridZ, int num_warps, int threads_per_warp, int shared_memory,
                                 ze_command_queue_handle_t queue, ze_device_handle_t _dev, ze_context_handle_t _ctxt,
                                 ze_kernel_handle_t function, ze_event_pool_handle_t event_pool
                                 {', ' + arg_decls if len(arg_decls) > 0 else ''}) {{
@@ -190,7 +190,7 @@ def make_launcher(constants, signature, ids):
           uint32_t num_params = sizeof(params)/sizeof(params[0]);
           zeKernelSetArgumentValue(function, num_params, shared_memory, NULL);
         }}
-        zeKernelSetGroupSize(function, 32*num_warps, 1, 1);
+        zeKernelSetGroupSize(function, threads_per_warp*num_warps, 1, 1);
 
         ze_group_count_t grpCount = {{gridX, gridY, gridZ}};
 
@@ -234,7 +234,7 @@ def make_launcher(constants, signature, ids):
       }}
     }}
 
-    static void _launch(uint32_t gridX, uint32_t gridY, uint32_t gridZ, int num_warps, int shared_memory,
+    static void _launch(uint32_t gridX, uint32_t gridY, uint32_t gridZ, int num_warps, int threads_per_warp, int shared_memory,
                         ze_command_list_handle_t queue, ze_kernel_handle_t function, ze_event_pool_handle_t event_pool
                         {', ' + arg_decls if len(arg_decls) > 0 else ''}) {{
       void *params[] = {{ {', '.join(f"&arg{i}" for i in signature.keys() if i not in constants)} }};
@@ -245,7 +245,7 @@ def make_launcher(constants, signature, ids):
           uint32_t num_params = sizeof(params)/sizeof(params[0]);
           zeKernelSetArgumentValue(function, num_params, shared_memory, NULL);
         }}
-        zeKernelSetGroupSize(function, 32*num_warps, 1, 1);
+        zeKernelSetGroupSize(function, threads_per_warp*num_warps, 1, 1);
         ze_group_count_t grpCount = {{gridX, gridY, gridZ}};
 
         ze_event_desc_t eventDesc = {{
@@ -358,7 +358,6 @@ def make_launcher(constants, signature, ids):
           using share_mem_t = sycl::accessor<int8_t, 1, sycl::access::mode::read_write, sycl::access::target::local>;
           share_mem_t local_buffer = share_mem_t(shared_memory, cgh);
           cgh.set_arg(num_params, local_buffer);
-          //cgh.parallel_for(sycl::nd_range{{sycl::range{{(uint32_t)gridX*threads_per_warp*num_warps}}, sycl::range{{work_group_size}}}}, kernel_ptr);
           cgh.parallel_for(parallel_work_size, kernel_ptr);
       }} else {{
           cgh.parallel_for(parallel_work_size, kernel_ptr);
@@ -407,7 +406,12 @@ def make_launcher(constants, signature, ids):
 
       sycl::queue stream = *(static_cast<sycl::queue*>(pStream));
       sycl::kernel kernel = *(static_cast<sycl::kernel*>(pKrnl));
-      auto threads_per_warp = 32;
+      int threads_per_warp = 16;
+      if (PyObject_HasAttrString(compiled_kernel, "threads_per_warp")) {{
+        PyObject* _threads_per_warp = PyObject_GetAttrString(compiled_kernel, "threads_per_warp");
+        if (PyLong_Check(_threads_per_warp))
+           threads_per_warp = PyLong_AsLong(_threads_per_warp);
+      }}
 
       {"; ".join([f"DevicePtrInfo ptr_info{i} = getPointer(_arg{i}, {i}); if (!ptr_info{i}.valid) return NULL;" if ty[0] == "*" else "" for i, ty in signature.items()])};
       sycl_kernel_launch(gridX, gridY, gridZ, num_warps, threads_per_warp, shared_memory, stream, kernel {',' + ', '.join(f"ptr_info{i}.dev_ptr" if ty[0]=="*" else f"_arg{i}" for i, ty in signature.items()) if len(signature) > 0 else ''});
