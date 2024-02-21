@@ -78,6 +78,7 @@ all their meaning remain the same as above blocked encoding
     ArrayRefParameter<"unsigned">:$sizePerThread,
     ArrayRefParameter<"unsigned">:$threadsPerWarp,
     ArrayRefParameter<"unsigned">:$order // the fastest-changing axis first
+    // DefaultValuedParameter<"bool", "false">:$isDotC
   );
 
   let extraClassDeclaration = [{
