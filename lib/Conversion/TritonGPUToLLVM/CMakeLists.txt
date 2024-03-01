@@ -31,6 +31,7 @@ add_triton_library(TritonGPUToLLVM
     ClusterOpsToLLVM.cpp
     PTXAsmFormat.cpp
     AllocateSharedMemory.cpp
+    TritonOpsToLLVM.cpp
 
     DEPENDS
     TritonGPUConversionPassIncGen

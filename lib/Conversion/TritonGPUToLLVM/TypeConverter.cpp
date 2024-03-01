@@ -3,6 +3,7 @@
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "triton/Conversion/MLIRTypes.h"
 #include "triton/Dialect/TritonIntelGPU/IR/Dialect.h"
+#include "triton/Tools/Sys/GetEnv.hpp"
 
 using namespace mlir;
 using namespace mlir::triton;
@@ -19,12 +20,29 @@ TritonGPUToLLVMTypeConverter::TritonGPUToLLVMTypeConverter(
     MLIRContext *ctx, LowerToLLVMOptions &option,
     const DataLayoutAnalysis *analysis)
     : LLVMTypeConverter(ctx, option, analysis) {
-  addConversion([&](triton::PointerType type) -> std::optional<Type> {
-    return convertTritonPointerType(type);
-  });
-  addConversion([&](RankedTensorType type) -> std::optional<Type> {
-    return convertTritonTensorType(type);
-  });
+  if (mlir::triton::tools::getBoolEnv("ENABLE_DIRECT_SIMD_LOWERING")) {
+    // tt::pointer to v8i32
+    addConversion([&](PointerType type) -> std::optional<Type> {
+      if (isa<RankedTensorType>(type.getPointeeType())) {
+        auto i32Type = mlir::IntegerType::get(type.getContext(), 32);
+        return mlir::VectorType::get(8, i32Type);
+      }
+      return LLVM::LLVMPointerType::get(type.getContext(),
+                                        type.getAddressSpace());
+    });
+    // tensor type is flattened and divided by 16(subgroupSize)
+    addConversion([&](mlir::RankedTensorType type) -> mlir::Type {
+      return mlir::VectorType::get(type.getNumElements() / 16,
+                                   type.getElementType());
+    });
+  } else {
+    addConversion([&](triton::PointerType type) -> std::optional<Type> {
+      return convertTritonPointerType(type);
+    });
+    addConversion([&](RankedTensorType type) -> std::optional<Type> {
+      return convertTritonTensorType(type);
+    });
+  }
   // Internally store float8 as int8
   addConversion([&](mlir::Float8E4M3B11FNUZType type) -> std::optional<Type> {
     return IntegerType::get(type.getContext(), 8);

@@ -8,6 +8,10 @@
 namespace mlir {
 namespace triton {
 
+void populateTritonOpsToLLVMPatterns(
+    TritonGPUToLLVMTypeConverter &typeConverter, RewritePatternSet &patterns,
+    Target target, PatternBenefit benefit);
+
 void populateBarrierOpToLLVMPatterns(
     TritonGPUToLLVMTypeConverter &typeConverter, RewritePatternSet &patterns,
     Target target, PatternBenefit benefit);
