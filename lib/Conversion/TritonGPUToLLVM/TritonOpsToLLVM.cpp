@@ -1,6 +1,7 @@
 #include "mlir/Dialect/GPU/IR/GPUDialect.h"
 #include "mlir/Dialect/LLVMIR/GENXDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "triton/Analysis/Utility.h"
 #include "triton/Dialect/Triton/IR/Dialect.h"
 #include "triton/Tools/Sys/GetEnv.hpp"
 
@@ -12,6 +13,7 @@ using namespace mlir;
 using namespace mlir::triton;
 
 namespace {
+
 /// @brief
 /// assemble the tensor descriptor payload[8xi32] which is of the format
 /// -> [base pointer, surface width, surface height, surface pitch,
@@ -31,63 +33,21 @@ public:
     auto loc = op.getLoc();
     auto i32Type = rewriter.getI32Type();
     auto i64Type = rewriter.getI64Type();
-    // payload
-    auto v8i32 = VectorType::get(8, i32Type);
-    auto v4i64 = VectorType::get(4, i64Type);
-    Value payLoad = rewriter.create<LLVM::UndefOp>(loc, v4i64);
+    auto v2i32 = VectorType::get(2, i32Type);
+    Value payLoad = rewriter.create<LLVM::UndefOp>(loc, v2i32);
     auto createIntConstant = [&](Type type, unsigned value) {
       auto attr = rewriter.getIntegerAttr(type, value);
       return rewriter.create<LLVM::ConstantOp>(loc, type, attr);
     };
-    auto base =
-        rewriter.create<LLVM::PtrToIntOp>(loc, i64Type, adaptor.getBase());
+    // if (rank == 2) {
+    auto offsetX = op.getOffsets()[1];
+    auto offsetY = op.getOffsets()[0];
     auto idx0 = createIntConstant(i32Type, 0);
-    payLoad = rewriter.create<LLVM::InsertElementOp>(loc, payLoad, base, idx0);
-    payLoad = rewriter.create<LLVM::BitcastOp>(loc, v8i32, payLoad);
-    auto ptrType = cast<PointerType>(op.getResult().getType());
-    auto tType = cast<RankedTensorType>(ptrType.getPointeeType());
-    auto rank = tType.getRank();
-    if (rank == 2) {
-      auto idx2 = createIntConstant(i32Type, 2);
-      auto idx3 = createIntConstant(i32Type, 3);
-      auto idx4 = createIntConstant(i32Type, 4);
-      auto idx5 = createIntConstant(i32Type, 5);
-      auto idx6 = createIntConstant(i32Type, 6);
-      auto idx7 = createIntConstant(i32Type, 7);
-      auto blockWidth = tType.getShape()[1];
-      auto blockHeight = tType.getShape()[0];
-
-      auto bytes = createIntConstant(
-          i32Type, tType.getElementType().getIntOrFloatBitWidth() / 8);
-      auto one = createIntConstant(i32Type, 1);
-      Value surfaceW =
-          rewriter.create<arith::TruncIOp>(loc, i32Type, op.getShape()[1]);
-      surfaceW = rewriter.create<arith::MulIOp>(loc, surfaceW, bytes);
-      surfaceW = rewriter.create<arith::SubIOp>(loc, surfaceW, one);
-      Value surfaceH =
-          rewriter.create<arith::TruncIOp>(loc, i32Type, op.getShape()[0]);
-      surfaceH = rewriter.create<arith::SubIOp>(loc, surfaceH, one);
-      Value surfaceP =
-          rewriter.create<arith::TruncIOp>(loc, i32Type, op.getStrides()[0]);
-      surfaceP = rewriter.create<arith::MulIOp>(loc, surfaceP, bytes);
-      surfaceP = rewriter.create<arith::SubIOp>(loc, surfaceP, one);
-      auto offsetX = op.getOffsets()[1];
-      auto offsetY = op.getOffsets()[0];
-      payLoad =
-          rewriter.create<LLVM::InsertElementOp>(loc, payLoad, surfaceW, idx2);
-      payLoad =
-          rewriter.create<LLVM::InsertElementOp>(loc, payLoad, surfaceH, idx3);
-      payLoad =
-          rewriter.create<LLVM::InsertElementOp>(loc, payLoad, surfaceP, idx4);
-      payLoad =
-          rewriter.create<LLVM::InsertElementOp>(loc, payLoad, offsetX, idx5);
-      payLoad =
-          rewriter.create<LLVM::InsertElementOp>(loc, payLoad, offsetY, idx6);
-      unsigned blockVal = ((blockHeight - 1) << 8) | (blockWidth - 1);
-      auto blockInfo = createIntConstant(i32Type, blockVal);
-      payLoad =
-          rewriter.create<LLVM::InsertElementOp>(loc, payLoad, blockInfo, idx7);
-    }
+    auto idx1 = createIntConstant(i32Type, 1);
+    payLoad =
+        rewriter.create<LLVM::InsertElementOp>(loc, payLoad, offsetX, idx0);
+    payLoad =
+        rewriter.create<LLVM::InsertElementOp>(loc, payLoad, offsetY, idx1);
     rewriter.replaceOp(op, payLoad);
     return success();
   }
@@ -112,11 +72,11 @@ public:
         if (auto attr = dyn_cast<mlir::IntegerAttr>(cst.getValue());
             attr && attr.getInt() == 0)
           continue;
-      auto idx5 = rewriter.create<LLVM::ConstantOp>(
-          loc, i32Type, rewriter.getIntegerAttr(i32Type, 5));
-      auto idx6 = rewriter.create<LLVM::ConstantOp>(
-          loc, i32Type, rewriter.getIntegerAttr(i32Type, 6));
-      Value idx = i == 0 ? idx6 : idx5;
+      auto idx0 = rewriter.create<LLVM::ConstantOp>(
+          loc, i32Type, rewriter.getIntegerAttr(i32Type, 0));
+      auto idx1 = rewriter.create<LLVM::ConstantOp>(
+          loc, i32Type, rewriter.getIntegerAttr(i32Type, 1));
+      Value idx = i == 0 ? idx1 : idx0;
       auto oldOffset = rewriter.create<LLVM::ExtractElementOp>(loc, ptr, idx);
       auto newOffset =
           rewriter.create<LLVM::AddOp>(loc, i32Type, oldOffset, offset);
@@ -162,47 +122,58 @@ public:
     auto blockWidth = tType.getShape()[1];
     auto blockHeight = tType.getShape()[0];
     auto idx0 = createIntConstant(i32Type, 0);
-    auto idx2 = createIntConstant(i32Type, 2);
-    auto idx3 = createIntConstant(i32Type, 3);
-    auto idx4 = createIntConstant(i32Type, 4);
-    auto idx5 = createIntConstant(i32Type, 5);
-    auto idx6 = createIntConstant(i32Type, 6);
-    auto tensorPtr = adaptor.getPtr();
-    auto cast = rewriter.create<LLVM::BitcastOp>(loc, v4i64, tensorPtr);
-    auto base = rewriter.create<LLVM::ExtractElementOp>(loc, cast, idx0);
-    // genx requires to be ptr and convert to i64 in llvm repo
-    // fixme: change genx def to i64
-    auto ptrTy = LLVM::LLVMPointerType::get(
-        rewriter.getContext(), 1 /*GENX::GENXMemorySpace::kCrossWorkgrou*/);
-    auto ptr = rewriter.create<LLVM::IntToPtrOp>(loc, ptrTy, base);
+    auto idx1 = createIntConstant(i32Type, 1);
+    Value ptr = op.getPtr();
+    if (auto cast =
+            dyn_cast<mlir::UnrealizedConversionCastOp>(ptr.getDefiningOp()))
+      ptr = cast.getInputs()[0];
+    MakeTensorPtrOp ptrOp = getMakeTensorPtrOp(ptr);
+    Value base = ptrOp.getBase();
+    if (auto cast =
+            dyn_cast<mlir::UnrealizedConversionCastOp>(base.getDefiningOp()))
+      base = cast.getInputs()[0];
 
-    auto surfaceW =
-        rewriter.create<LLVM::ExtractElementOp>(loc, tensorPtr, idx2);
-    auto surfaceH =
-        rewriter.create<LLVM::ExtractElementOp>(loc, tensorPtr, idx3);
-    auto surfaceP =
-        rewriter.create<LLVM::ExtractElementOp>(loc, tensorPtr, idx4);
+    auto insertPoint = rewriter.saveInsertionPoint();
+    rewriter.setInsertionPointAfter(ptrOp);
+    auto bytes = createIntConstant(
+        i32Type, tType.getElementType().getIntOrFloatBitWidth() / 8);
+    auto one = createIntConstant(i32Type, 1);
+    Value surfaceW =
+        rewriter.create<arith::TruncIOp>(loc, i32Type, ptrOp.getShape()[1]);
+    surfaceW = rewriter.create<arith::MulIOp>(loc, surfaceW, bytes);
+    surfaceW = rewriter.create<arith::SubIOp>(loc, surfaceW, one);
+    Value surfaceH =
+        rewriter.create<arith::TruncIOp>(loc, i32Type, ptrOp.getShape()[0]);
+    surfaceH = rewriter.create<arith::SubIOp>(loc, surfaceH, one);
+    Value surfaceP =
+        rewriter.create<arith::TruncIOp>(loc, i32Type, ptrOp.getStrides()[0]);
+    surfaceP = rewriter.create<arith::MulIOp>(loc, surfaceP, bytes);
+    surfaceP = rewriter.create<arith::SubIOp>(loc, surfaceP, one);
+    rewriter.restoreInsertionPoint(insertPoint);
+
+    auto tensorPtr = adaptor.getPtr();
     auto offsetX =
-        rewriter.create<LLVM::ExtractElementOp>(loc, tensorPtr, idx5);
+        rewriter.create<LLVM::ExtractElementOp>(loc, tensorPtr, idx0);
     auto offsetY =
-        rewriter.create<LLVM::ExtractElementOp>(loc, tensorPtr, idx6);
+        rewriter.create<LLVM::ExtractElementOp>(loc, tensorPtr, idx1);
     if constexpr (isLoad) {
       auto resType =
           this->getTypeConverter()->convertType(op->getResult(0).getType());
       auto load = rewriter.create<GENX::Matrix2DBlockLoadOp>(
-          loc, resType, ptr, surfaceW, surfaceH, surfaceP, offsetX, offsetY,
+          loc, resType, base, surfaceW, surfaceH, surfaceP, offsetX, offsetY,
           dataSize, blockWidth, blockHeight, 1 /*v_blocks*/, transpose, vnni);
       rewriter.replaceOp(op, load);
-    } else if constexpr (isPrefetch) {
-      auto resType = VectorType::get(blockWidth * blockHeight / 16,
+   } else if constexpr (isPrefetch) {
+     auto resType =
+         VectorType::get(blockWidth * blockHeight / 16,
                                      tType.getElementType());
       auto load = rewriter.create<GENX::Matrix2DBlockLoadOp>(
-          loc, resType, ptr, surfaceW, surfaceH, surfaceP, offsetX, offsetY,
+          loc, resType, base, surfaceW, surfaceH, surfaceP, offsetX, offsetY,
           dataSize, blockWidth, blockHeight, 1 /*v_blocks*/, transpose, vnni);
       rewriter.eraseOp(op);
     } else {
       rewriter.create<GENX::Matrix2DBlockStoreOp>(
-          loc, ptr, surfaceW, surfaceH, surfaceP, offsetX, offsetY, dataSize,
+          loc, base, surfaceW, surfaceH, surfaceP, offsetX, offsetY, dataSize,
           blockWidth, blockHeight, 1 /*v_blocks*/, transpose, vnni,
           adaptor.getValue());
       rewriter.eraseOp(op);

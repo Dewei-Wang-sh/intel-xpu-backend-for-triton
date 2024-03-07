@@ -21,11 +21,11 @@ TritonGPUToLLVMTypeConverter::TritonGPUToLLVMTypeConverter(
     const DataLayoutAnalysis *analysis)
     : LLVMTypeConverter(ctx, option, analysis) {
   if (mlir::triton::tools::getBoolEnv("ENABLE_DIRECT_SIMD_LOWERING")) {
-    // tt::pointer to v8i32
+    // tt::pointer to v2i32
     addConversion([&](PointerType type) -> std::optional<Type> {
       if (isa<RankedTensorType>(type.getPointeeType())) {
         auto i32Type = mlir::IntegerType::get(type.getContext(), 32);
-        return mlir::VectorType::get(8, i32Type);
+        return mlir::VectorType::get(2, i32Type);
       }
       return LLVM::LLVMPointerType::get(type.getContext(),
                                         type.getAddressSpace());
@@ -34,6 +34,15 @@ TritonGPUToLLVMTypeConverter::TritonGPUToLLVMTypeConverter(
     addConversion([&](mlir::RankedTensorType type) -> mlir::Type {
       return mlir::VectorType::get(type.getNumElements() / 16,
                                    type.getElementType());
+      //// tt::pointer to v8i32
+      // addConversion([&](PointerType type) -> std::optional<Type> {
+      //   if (isa<RankedTensorType>(type.getPointeeType())) {
+      //     auto i32Type = mlir::IntegerType::get(type.getContext(), 32);
+      //     return mlir::VectorType::get(8, i32Type);
+      //   }
+      //   return LLVM::LLVMPointerType::get(type.getContext(),
+      //                                     type.getAddressSpace());
+      // });
     });
   } else {
     addConversion([&](triton::PointerType type) -> std::optional<Type> {

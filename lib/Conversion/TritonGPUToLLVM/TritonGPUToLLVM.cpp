@@ -62,6 +62,7 @@ public:
     addLegalDialect<index::IndexDialect>();
     addLegalDialect<LLVM::LLVMDialect>();
     addLegalDialect<NVVM::NVVMDialect>();
+    // addLegalDialect<scf::SCFDialect>();
     addLegalDialect<cf::ControlFlowDialect>();
     addLegalOp<mlir::UnrealizedConversionCastOp>();
   }
@@ -276,9 +277,9 @@ struct ConvertTritonGPUToLLVM
     RewritePatternSet patterns(context);
     int benefit = 10;
     if (enableSIMDLowering) {
-      // populateSCFToControlFlowConversionPatterns(patterns);
       // add tt.xxx conversion
       populateTritonOpsToLLVMPatterns(typeConverter, patterns, target, benefit);
+      // populateSCFToControlFlowConversionPatterns(patterns);
       populateControlFlowOpToLLVMPattern(typeConverter, patterns, target,
                                          benefit);
     } else {
