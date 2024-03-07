@@ -51,6 +51,24 @@ def TritonGPUPrefetch : Pass<"tritongpu-prefetch", "mlir::ModuleOp"> {
                            "mlir::arith::ArithDialect"];
 }
 
+def TritonGPUPrefetchBlock : Pass<"tritongpu-prefetch-block", "mlir::ModuleOp"> {
+  let summary = "prefetch a tensor block around loop";
+  let description = [{
+    only support block pointer.
+    only support target that has a dedicated prefetch instruction.
+  }];
+  let constructor = "mlir::triton::gpu::createPrefetchBlockPass()";
+  let dependentDialects = ["mlir::triton::TritonDialect",
+                           "mlir::triton::gpu::TritonGPUDialect",
+                           "mlir::scf::SCFDialect",
+                           "mlir::gpu::GPUDialect"];
+  let options = [
+    Option<"numWarps", "num-warps",
+           "int32_t", /*default*/"4",
+           "number of warps per block">];
+}
+
+
 def TritonGPUDistributeToWarps : Pass<"tritongpu-distribute-to-warps", "mlir::ModuleOp"> {
   let summary = "distribute the thread block workload to the warps";
 
