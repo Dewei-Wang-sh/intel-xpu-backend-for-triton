@@ -42,6 +42,7 @@ inline const std::set<std::string> ENV_VARS = {
     "TRITON_DISABLE_RESHAPE_ENCODING_INFERENCE",
     "ENABLE_DIRECT_SIMD_LOWERING",
     "MY_DUMP",
+    "FROM_LLVM",
 };
 
 namespace tools {

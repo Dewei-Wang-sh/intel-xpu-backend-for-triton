@@ -40,6 +40,8 @@ void init_triton_passes_ttir(py::module &&m) {
                      createRewriteTensorPointerPass);
   ADD_PASS_WRAPPER_4("add_convert_to_ttgpuir",
                      createConvertTritonToTritonGPUPass, int, int, int, int);
+  ADD_PASS_WRAPPER_1("add_convert_to_ttgpuir_warp",
+                     createConvertTritonToTritonGPUWarpPass, int);
 }
 
 void init_triton_passes_ttgpuir(py::module &&m) {
@@ -49,6 +51,12 @@ void init_triton_passes_ttgpuir(py::module &&m) {
                      createOptimizeThreadLocalityPass);
   ADD_PASS_WRAPPER_4("add_pipeline", createPipelinePass, int, int, int, int);
   ADD_PASS_WRAPPER_0("add_prefetch", createPrefetchPass);
+  ADD_PASS_WRAPPER_1("add_prefetch_block", createPrefetchBlockPass, int);
+  ADD_PASS_WRAPPER_0("add_distribute_to_warps",
+                     createTritonGPUDistributeToWarpsPass);
+  ADD_PASS_WRAPPER_0("add_match_target_size",
+                     createTritonGPUMatchTargetSizePass);
+  ADD_PASS_WRAPPER_0("add_prepare_genxlsc", createPrepareGenxLscPass);
   ADD_PASS_WRAPPER_1("add_accelerate_matmul", createAccelerateMatmulPass, int);
   ADD_PASS_WRAPPER_0("add_reorder_instructions", createReorderInstructionsPass);
   ADD_PASS_WRAPPER_0("add_optimize_dot_operands",

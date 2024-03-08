@@ -110,13 +110,15 @@ public:
       auto attr = rewriter.getIntegerAttr(type, value);
       return rewriter.create<LLVM::ConstantOp>(loc, type, attr);
     };
+    auto i16Type = rewriter.getI16Type();
     auto i32Type = rewriter.getI32Type();
     auto i64Type = rewriter.getI64Type();
     auto v4i64 = VectorType::get(4, i64Type);
     auto vnni = false;
     auto transpose = false;
     if constexpr (isLoad) {
-      vnni = op->hasAttr("isDotB") ? true : false;
+      auto idxAttr = op->template getAttrOfType<mlir::IntegerAttr>("DotIdx");
+      vnni = idxAttr.getInt() == 1 ? true : false;
     }
     unsigned dataSize = tType.getElementType().getIntOrFloatBitWidth();
     auto blockWidth = tType.getShape()[1];
@@ -151,6 +153,14 @@ public:
     surfaceP = rewriter.create<arith::SubIOp>(loc, surfaceP, one);
     rewriter.restoreInsertionPoint(insertPoint);
 
+    auto getIntType = [&](Type type, bool is16Bit = false) {
+      auto tType = cast<RankedTensorType>(type);
+      auto elemType = is16Bit ? i16Type : i32Type;
+      auto ratio =
+          elemType.getIntOrFloatBitWidth() / tType.getElementTypeBitWidth();
+      auto num = tType.getNumElements() / 16 / ratio;
+      return VectorType::get(num, elemType);
+    };
     auto tensorPtr = adaptor.getPtr();
     auto offsetX =
         rewriter.create<LLVM::ExtractElementOp>(loc, tensorPtr, idx0);
@@ -159,23 +169,29 @@ public:
     if constexpr (isLoad) {
       auto resType =
           this->getTypeConverter()->convertType(op->getResult(0).getType());
+      auto idxAttr = op->template getAttrOfType<mlir::IntegerAttr>("DotIdx");
+      auto idx = idxAttr.getInt();
+      auto intType = getIntType(op->getResult(0).getType(), idx == 0);
       auto load = rewriter.create<GENX::Matrix2DBlockLoadOp>(
-          loc, resType, base, surfaceW, surfaceH, surfaceP, offsetX, offsetY,
-          dataSize, blockWidth, blockHeight, 1 /*v_blocks*/, transpose, vnni);
-      rewriter.replaceOp(op, load);
+          loc, intType, base, surfaceW, surfaceH, surfaceP, offsetX, offsetY,
+          dataSize, blockWidth, blockHeight, 2 /*v_blocks*/, transpose, vnni);
+      auto cast = rewriter.create<LLVM::BitcastOp>(loc, resType, load);
+      rewriter.replaceOp(op, cast);
    } else if constexpr (isPrefetch) {
      auto resType =
          VectorType::get(blockWidth * blockHeight / 16,
                                      tType.getElementType());
-      auto load = rewriter.create<GENX::Matrix2DBlockLoadOp>(
-          loc, resType, base, surfaceW, surfaceH, surfaceP, offsetX, offsetY,
-          dataSize, blockWidth, blockHeight, 1 /*v_blocks*/, transpose, vnni);
-      rewriter.eraseOp(op);
+     auto load = rewriter.create<GENX::Matrix2DBlockLoadOp>(
+         loc, resType, base, surfaceW, surfaceH, surfaceP, offsetX, offsetY,
+         dataSize, blockWidth, blockHeight, 2 /*v_blocks*/, transpose, vnni);
+     rewriter.eraseOp(op);
     } else {
+      auto intType = getIntType(op.getValue().getType());
+      auto cast =
+          rewriter.create<LLVM::BitcastOp>(loc, intType, adaptor.getValue());
       rewriter.create<GENX::Matrix2DBlockStoreOp>(
           loc, base, surfaceW, surfaceH, surfaceP, offsetX, offsetY, dataSize,
-          blockWidth, blockHeight, 1 /*v_blocks*/, transpose, vnni,
-          adaptor.getValue());
+          blockWidth, blockHeight, 1 /*v_blocks*/, transpose, vnni, cast);
       rewriter.eraseOp(op);
     }
     return success();
@@ -189,6 +205,7 @@ public:
   matchAndRewrite(DotOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     auto loc = op.getLoc();
+    auto i16Type = rewriter.getI16Type();
     auto i32Type = rewriter.getI32Type();
     auto encodePrecision = [&](Type type) -> GENX::PrecisionType {
       if (type == rewriter.getBF16Type())
@@ -208,9 +225,23 @@ public:
     auto precB = GENX::PrecisionTypeAttr::get(rewriter.getContext(), precb);
     auto rc = IntegerAttr::get(i32Type, 8);
     // sd dpasW fixed in genx.dpas lowering
+    auto getIntType = [&](Type type, bool is16Bit = false) {
+      auto tType = cast<RankedTensorType>(type);
+      auto elemType = is16Bit ? i16Type : i32Type;
+      auto ratio =
+          elemType.getIntOrFloatBitWidth() / tType.getElementTypeBitWidth();
+      auto num = tType.getNumElements() / 16 / ratio;
+      return VectorType::get(num, elemType);
+    };
+    auto intTypeA = getIntType(op.getA().getType(), true);
+    auto castA =
+        rewriter.create<LLVM::BitcastOp>(loc, intTypeA, adaptor.getA());
+    auto intTypeB = getIntType(op.getB().getType());
+    auto castB =
+        rewriter.create<LLVM::BitcastOp>(loc, intTypeB, adaptor.getB());
     auto dpas = rewriter.create<GENX::MatrixDPASOp>(
-        loc, adaptor.getC().getType(), adaptor.getC(), adaptor.getA(),
-        adaptor.getB(), precA, precB, rc);
+        loc, adaptor.getC().getType(), adaptor.getC(), castA, castB, precA,
+        precB, rc);
     rewriter.replaceOp(op, dpas);
     return success();
   }
@@ -254,6 +285,24 @@ public:
     } else {
       assert(0 && "add more support for tt.glue to llvm");
     }
+    return success();
+  }
+};
+
+class CastOpConversion : public ConvertTritonGPUOpToLLVMPattern<CastOp> {
+public:
+  using ConvertTritonGPUOpToLLVMPattern<
+      CastOp>::ConvertTritonGPUOpToLLVMPattern;
+  LogicalResult
+  matchAndRewrite(CastOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    llvm::outs() << "cast \n";
+    op->dump();
+    auto loc = op.getLoc();
+    auto dstType = getTypeConverter()->convertType(op.getType());
+    auto cast =
+        rewriter.create<LLVM::BitcastOp>(loc, dstType, adaptor.getSrc());
+    rewriter.replaceOp(op, cast);
     return success();
   }
 };
@@ -368,6 +417,7 @@ void mlir::triton::populateTritonOpsToLLVMPatterns(
                                                        benefit);
   patterns.add<GlueOpConversion>(typeConverter, target, benefit);
   patterns.add<ExtractOpConversion>(typeConverter, target, benefit);
+  patterns.add<CastOpConversion>(typeConverter, target, benefit);
   patterns.add<GPUSubgroupIdOpLowering>(typeConverter, target, benefit);
   patterns.add<ArithConstantOpLowering>(typeConverter, target, benefit);
 }

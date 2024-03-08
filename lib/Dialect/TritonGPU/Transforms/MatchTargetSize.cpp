@@ -91,7 +91,7 @@ private:
     }
   }
   // assume
-  // all lsc size max is 256 DW
+  // all lsc size max is 512 DW
   // lsc 2d limit is 32
   //  bool isLsc = false)
   SmallVector<int64_t> getSubOpSize(RankedTensorType type) {
@@ -104,20 +104,27 @@ private:
       colLimit = 32;
       colLimit = 16;
       // if (warpAttr.getIsDotC())
-      if (warpAttr.getSizePerThread()[1] == 64)
+      if (warpAttr.getSizePerThread()[1] == 64) {
         colLimit = nStep;
+        auto shape = type.getShape();
+        SmallVector<int64_t> subSize(shape.size());
+        subSize[0] = 8;
+        subSize[1] = 16;
+        return subSize;
+      }
     } else if (auto dotAttr = dyn_cast<ttg::DotOperandEncodingAttr>(layout)) {
       colLimit = dotAttr.getOpIdx() == 0 ? kStep : nStep;
+      colLimit = 32;
     }
     auto shape = type.getShape();
     SmallVector<int64_t> subSize(shape.size());
     auto sizeInByte = type.getElementTypeBitWidth() / 8;
     if (shape.size() == 2) {
       subSize[1] = (shape[1] > colLimit) ? colLimit : shape[1];
-      auto max = 256 * 4 / sizeInByte / subSize[1];
+      auto max = 512 * 4 / sizeInByte / subSize[1];
       subSize[0] = std::min(max, shape[0]);
     } else if (shape.size() == 1) {
-      int64_t max = 256 * 4 / sizeInByte;
+      int64_t max = 512 * 4 / sizeInByte;
       subSize[0] = std::min(max, shape[0]);
     }
     return subSize;
@@ -216,7 +223,7 @@ private:
 
   void transformGenericOp(Operation *op) {
     auto numResults = op->getResults().size();
-    bool isDotB = false;
+    unsigned dotIdx = 2;
     Type type;
     // prefetch/store
     if (numResults == 0)
@@ -230,7 +237,7 @@ private:
       if (dyn_cast<tt::LoadOp>(op) && tensorType) {
         auto layout = tensorType.getEncoding();
         if (auto dotAttr = dyn_cast<ttg::DotOperandEncodingAttr>(layout)) {
-          isDotB = dotAttr.getOpIdx() == 1;
+          dotIdx = dotAttr.getOpIdx();
         }
       }
     }
@@ -269,8 +276,9 @@ private:
           else {
             subOp = b.create(loc, op->getName().getIdentifier(), newOperands,
                              subType, op->getAttrs());
-            if (isDotB)
-              subOp->setAttr("isDotB", b.getUnitAttr());
+            if (dotIdx < 2)
+              subOp->setAttr("DotIdx",
+                             b.getIntegerAttr(b.getI32Type(), dotIdx));
             subOps.push_back(subOp->getResults()[0]);
           }
           idx++;

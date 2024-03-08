@@ -990,4 +990,14 @@ def TT_ExtractOp : TT_Op<"extract", [Pure]> {
     let assemblyFormat = "$base `,` $idx attr-dict `:` type($base) `->` type($result)";
 }
 
+def TT_CastOp : TT_Op<"cast", [Pure]> {
+    let summary = "bitcast a tensor to another type with the same overall bits";
+
+    let arguments = (ins TT_Tensor:$src);
+
+    let results = (outs TT_Tensor:$dst);
+
+    let assemblyFormat = "$src attr-dict `:` type($src) `to` type($dst)";
+}
+
 #endif // Triton_OPS

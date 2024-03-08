@@ -104,6 +104,19 @@ def TritonGPUMatchTargetSize : Pass<"tritongpu-match-target-size", "mlir::Module
   ];
 }
 
+def TritonGPUPrepareGenxLsc : Pass<"tritongpu-prepare-genxlsc", "mlir::ModuleOp"> {
+  let summary = "tweak load operation to i16/i32";
+
+  let description = [{
+  }];
+
+  let constructor = "mlir::triton::gpu::createPrepareGenxLscPass()";
+
+  let dependentDialects = ["mlir::triton::TritonDialect",
+                           "mlir::triton::gpu::TritonGPUDialect",
+                           "mlir::scf::SCFDialect",
+                           "mlir::arith::ArithDialect"];
+}
 
 
 def TritonGPUAccelerateMatmul : Pass<"tritongpu-accelerate-matmul", "mlir::ModuleOp"> {

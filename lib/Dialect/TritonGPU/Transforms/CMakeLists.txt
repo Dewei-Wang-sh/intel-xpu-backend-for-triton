@@ -13,6 +13,7 @@ add_triton_library(TritonGPUTransforms
   Pipeliner/PipeliningUtility.cpp
   Prefetch.cpp
   PrefetchBlock.cpp
+  PrepareGenxLsc.cpp
   RemoveLayoutConversions.cpp
   ReorderInstructions.cpp
   Utility.cpp
