@@ -107,7 +107,7 @@ class XPUBackend(BaseBackend):
         if os.environ.get("ENABLE_DIRECT_SIMD_LOWERING", ""):
             print("num_warps", opt.num_warps)
             passes.ttir.add_convert_to_ttgpuir_warp(pm, opt.num_warps)
-            # passes.ttgpuir.add_prefetch_block(pm, opt.num_warps)
+            passes.ttgpuir.add_prefetch_block(pm, opt.num_warps)
             passes.ttgpuir.add_distribute_to_warps(pm)
             passes.ttgpuir.add_match_target_size(pm)
             passes.ttgpuir.add_prepare_genxlsc(pm)
@@ -202,6 +202,8 @@ class XPUBackend(BaseBackend):
     def make_spv(src, metadata):
         ret, name = llvm.translate_to_spirv(src)
         metadata["name"] = name
+        print("first spirv module")
+        print(ret)
         return ret
 
     def add_stages(self, stages, options):

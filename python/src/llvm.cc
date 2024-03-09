@@ -24,6 +24,8 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
+#include <iostream>
+
 namespace py = pybind11;
 
 namespace llvm {
@@ -252,6 +254,7 @@ void init_triton_llvm(py::module &&m) {
         assert(kernels.size() == 1);
         std::string name = (*kernels.begin())->getName().str();
         std::string spirvBitcode = triton::translateLLVMIRToSPIRV(*module);
+        std::cout << spirvBitcode <<std::endl;
         return std::make_tuple(py::bytes(spirvBitcode), name);
       },
       ret::take_ownership);

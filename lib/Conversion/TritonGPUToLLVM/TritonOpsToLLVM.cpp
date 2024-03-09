@@ -174,16 +174,15 @@ public:
       auto intType = getIntType(op->getResult(0).getType(), idx == 0);
       auto load = rewriter.create<GENX::Matrix2DBlockLoadOp>(
           loc, intType, base, surfaceW, surfaceH, surfaceP, offsetX, offsetY,
-          dataSize, blockWidth, blockHeight, 2 /*v_blocks*/, transpose, vnni);
+          dataSize, blockWidth / 2, blockHeight, 2 /*v_blocks*/, transpose,
+          vnni);
       auto cast = rewriter.create<LLVM::BitcastOp>(loc, resType, load);
       rewriter.replaceOp(op, cast);
    } else if constexpr (isPrefetch) {
-     auto resType =
-         VectorType::get(blockWidth * blockHeight / 16,
-                                     tType.getElementType());
-     auto load = rewriter.create<GENX::Matrix2DBlockLoadOp>(
-         loc, resType, base, surfaceW, surfaceH, surfaceP, offsetX, offsetY,
-         dataSize, blockWidth, blockHeight, 2 /*v_blocks*/, transpose, vnni);
+     auto load = rewriter.create<GENX::Matrix2DBlockPrefetchOp>(
+         loc, base, surfaceW, surfaceH, surfaceP, offsetX, offsetY,
+         dataSize, blockWidth, blockHeight, 1 /*v_blocks*/, transpose,
+         vnni);
      rewriter.eraseOp(op);
     } else {
       auto intType = getIntType(op.getValue().getType());
