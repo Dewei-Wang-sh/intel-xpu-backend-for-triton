@@ -28,8 +28,6 @@ public:
   LogicalResult
   matchAndRewrite(MakeTensorPtrOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    llvm::outs() << "make tensor ptr \n";
-    op->dump();
     auto loc = op.getLoc();
     auto i32Type = rewriter.getI32Type();
     auto i64Type = rewriter.getI64Type();
@@ -60,8 +58,6 @@ public:
   LogicalResult
   matchAndRewrite(AdvanceOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    llvm::outs() << "advance \n";
-    op->dump();
     auto loc = op.getLoc();
     auto i32Type = rewriter.getI32Type();
     auto offsets = adaptor.getOffsets();
@@ -82,7 +78,6 @@ public:
           rewriter.create<LLVM::AddOp>(loc, i32Type, oldOffset, offset);
       ptr = rewriter.create<LLVM::InsertElementOp>(loc, ptr, newOffset, idx);
     }
-    ptr.dump();
     rewriter.replaceOp(op, ptr);
     return success();
   }
@@ -97,8 +92,6 @@ public:
   LogicalResult
   matchAndRewrite(OpType op, typename OpType::Adaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    llvm::outs() << "lsc \n";
-    op->dump();
     auto ptrType = cast<PointerType>(op.getPtr().getType());
     auto tType = cast<RankedTensorType>(ptrType.getPointeeType());
     auto rank = tType.getRank();
@@ -253,8 +246,6 @@ public:
   LogicalResult
   matchAndRewrite(GlueOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    llvm::outs() << "glue \n";
-    op->dump();
     auto loc = op.getLoc();
     auto operands = adaptor.getOperands();
     auto dstType =
@@ -295,8 +286,6 @@ public:
   LogicalResult
   matchAndRewrite(CastOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    llvm::outs() << "cast \n";
-    op->dump();
     auto loc = op.getLoc();
     auto dstType = getTypeConverter()->convertType(op.getType());
     auto cast =
@@ -313,8 +302,6 @@ public:
   LogicalResult
   matchAndRewrite(ExtractOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    llvm::outs() << "extract \n";
-    op->dump();
     auto loc = op.getLoc();
     auto base = adaptor.getBase();
     auto idx = op.getIdx();

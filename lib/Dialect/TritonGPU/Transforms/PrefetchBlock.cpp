@@ -228,7 +228,6 @@ public:
             std::prev(newLoop.getBody()->end()),
             loop.getBody()->getOperations());
         auto yield = cast<scf::YieldOp>(newLoop.getBody()->getTerminator());
-        newLoop.dump();
         loop.erase();
         // loop.getInitArgsMutable().append({prePtr2});
         // // loop.getResults().append({prePtr2});

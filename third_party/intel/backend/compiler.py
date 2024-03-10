@@ -105,7 +105,6 @@ class XPUBackend(BaseBackend):
         pm = ir.pass_manager(mod.context)
         pm.enable_debug()
         if os.environ.get("ENABLE_DIRECT_SIMD_LOWERING", ""):
-            print("num_warps", opt.num_warps)
             passes.ttir.add_convert_to_ttgpuir_warp(pm, opt.num_warps)
             passes.ttgpuir.add_prefetch_block(pm, opt.num_warps)
             passes.ttgpuir.add_distribute_to_warps(pm)
@@ -180,8 +179,6 @@ class XPUBackend(BaseBackend):
         llvm.init_targets()
         context = llvm.context()
         llvm_mod = llvm.to_module(mod, context)
-        print("first llvm module")
-        print(llvm_mod)
         llvm.set_spv_target_triple(llvm_mod)
         if options.extern_libs:
             for name, path in options.extern_libs:
@@ -189,8 +186,6 @@ class XPUBackend(BaseBackend):
         llvm.optimize_module(llvm_mod, llvm.OPTIMIZE_O3)
         if os.environ.get("FROM_LLVM", ""):
             llvm_mod = llvm.parse_ir_file("/home/gta/deweiwang/xpu/intel-xpu-backend-for-triton/python/tutorials/input.ll", context);
-        print("second llvm module")
-        print(llvm_mod)
         # Get some metadata
         metadata["shared"] = src.get_int_attr("triton_gpu.shared")
         ret = str(llvm_mod)
@@ -202,8 +197,6 @@ class XPUBackend(BaseBackend):
     def make_spv(src, metadata):
         ret, name = llvm.translate_to_spirv(src)
         metadata["name"] = name
-        print("first spirv module")
-        print(ret)
         return ret
 
     def add_stages(self, stages, options):

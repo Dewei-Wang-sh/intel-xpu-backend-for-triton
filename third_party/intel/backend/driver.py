@@ -255,12 +255,6 @@ def make_launcher(constants, signature, ids):
     size_t local_range_x = num_warps*threads_per_warp;
     size_t local_range_y = 1;
     size_t local_range_z = 1;
-    std::cout<< "threads_per_warp"<< threads_per_warp << std::endl;
-    std::cout<< "num_warps"<< num_warps << std::endl;
-    std::cout<< "global_range_x"<< global_range_x << std::endl;
-    std::cout<< "global_range_y"<< global_range_y << std::endl;
-    std::cout<< "global_range_z"<< global_range_z << std::endl;
-    std::cout<< "local_range_x"<< local_range_x << std::endl;
     sycl::range<3> global_range(global_range_z, global_range_y, global_range_x);
     sycl::range<3> local_range(local_range_z, local_range_y, local_range_x);
     sycl::nd_range<3> parallel_work_size(global_range, local_range);

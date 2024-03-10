@@ -139,7 +139,6 @@ public:
         assert(dots.size() <= 2 && "only support 1/2 dot in a loop");
         LoopDotInfo loopDotInfo;
         collectLoopDotInfo(loop, dots[0], loopDotInfo);
-        loopDotInfo.dump();
         loopMap[loop] = loopDotInfo;
         // DAG pattern match
         auto workLoadKind = matchLoopWorkload(loop, loopDotInfo);

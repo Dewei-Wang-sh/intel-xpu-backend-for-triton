@@ -265,7 +265,6 @@ struct ConvertTritonGPUToLLVM
               applyPartialConversion(mod, funcTarget, std::move(funcPatterns))))
         return signalPassFailure();
     }
-    mod->dump();
 
     // initSharedMemory is run before the conversion of call and ret ops,
     // because the call op has to know the shared memory base address of each

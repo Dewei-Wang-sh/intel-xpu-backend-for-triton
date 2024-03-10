@@ -69,7 +69,6 @@ public:
       return WalkResult::advance();
     });
 
-    m.dump();
     /// canonicalize ops(remove redundant tt.extract, tt.glue)
     RewritePatternSet patterns(ctx);
     patterns.add<ScfPattern>(ctx);
