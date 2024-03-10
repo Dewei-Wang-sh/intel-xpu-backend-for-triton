@@ -226,15 +226,18 @@ torch.manual_seed(0)
 a = torch.randn((4096, 4096), device='xpu', dtype=torch.float16)
 b = torch.randn((4096, 4096), device='xpu', dtype=torch.float16)
 #triton_output = matmul(a, b)
-#torch_output = torch.matmul(a, b)
-#
+#torch_output_f16 = torch.matmul(a, b)
+#torch_output = torch_output_f16.to(torch.float32)
+
+#print(triton_output)
+#print(torch_output)
+
 ## Note: the torch.matmul and Triton implementations uses different
 ## algorithms so we need to adjust tolerance.
-#if torch.allclose(triton_output, torch, atol=1e-3, rtol=1e-3):
-#    print("✅ Triton and Torch match")
+#if torch.allclose(triton_output, torch_output, atol=1e-3, rtol=1e-3):
+    #print("✅ Triton and Torch match")
 #else:
-#    print("❌ Triton and Torch differ")
-
+    #print("❌ Triton and Torch differ")
 
 
 @triton.testing.perf_report(
