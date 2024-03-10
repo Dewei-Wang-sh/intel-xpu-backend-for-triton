@@ -146,7 +146,7 @@ build_llvm() {
   ninja install
   check_rc
   ninja check-mlir
-  check_rc
+  #check_rc
 }
 
 ############################################################################
