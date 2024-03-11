@@ -242,8 +242,18 @@ public:
           auto load = info.load;
           b.setInsertionPoint(load);
           loc = load.getLoc();
-          if (i == 0)
+          if (i == 0) {
+            // b.create<gpu::BarrierOp>(loc);
+            auto cst = b.create<arith::ConstantIntOp>(loc, 255, 32);
+            auto remainder =
+                b.create<arith::AndIOp>(loc, newLoop.getInductionVar(), cst);
+            auto cst0 = b.create<arith::ConstantIntOp>(loc, 0, 32);
+            auto cmp = b.create<arith::CmpIOp>(loc, arith::CmpIPredicate::eq,
+                                               remainder, cst0);
+            auto ifOp = b.create<scf::IfOp>(loc, cmp, false);
+            b.setInsertionPointToStart(ifOp.getBody());
             b.create<gpu::BarrierOp>(loc);
+          }
           b.setInsertionPoint(info.advance);
           loc = info.advance.getLoc();
           auto prefetchInLoop =
