@@ -243,16 +243,15 @@ public:
           b.setInsertionPoint(load);
           loc = load.getLoc();
           if (i == 0) {
-            // b.create<gpu::BarrierOp>(loc);
-            auto cst = b.create<arith::ConstantIntOp>(loc, 255, 32);
-            auto remainder =
-                b.create<arith::AndIOp>(loc, newLoop.getInductionVar(), cst);
-            auto cst0 = b.create<arith::ConstantIntOp>(loc, 0, 32);
-            auto cmp = b.create<arith::CmpIOp>(loc, arith::CmpIPredicate::eq,
-                                               remainder, cst0);
-            auto ifOp = b.create<scf::IfOp>(loc, cmp, false);
-            b.setInsertionPointToStart(ifOp.getBody());
-            b.create<gpu::BarrierOp>(loc);
+            //auto cst = b.create<arith::ConstantIntOp>(loc, 255, 32);
+            //auto remainder =
+                //b.create<arith::AndIOp>(loc, newLoop.getInductionVar(), cst);
+            //auto cst0 = b.create<arith::ConstantIntOp>(loc, 0, 32);
+            //auto cmp = b.create<arith::CmpIOp>(loc, arith::CmpIPredicate::eq,
+                                               //remainder, cst0);
+            //auto ifOp = b.create<scf::IfOp>(loc, cmp, false);
+            //b.setInsertionPointToStart(ifOp.getBody());
+            //b.create<gpu::BarrierOp>(loc);
           }
           b.setInsertionPoint(info.advance);
           loc = info.advance.getLoc();
@@ -265,7 +264,6 @@ public:
           advances.push_back(advance);
         }
         yield.getResultsMutable().append(advances);
-        newLoop.dump();
         /// add in-loop barrier wait(check if can merge barrier for all loads)
       }
     }
