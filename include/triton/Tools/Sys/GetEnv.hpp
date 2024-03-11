@@ -43,6 +43,7 @@ inline const std::set<std::string> ENV_VARS = {
     "ENABLE_DIRECT_SIMD_LOWERING",
     "MY_DUMP",
     "FROM_LLVM",
+    "LLVM_SIMD",
 };
 
 namespace tools {

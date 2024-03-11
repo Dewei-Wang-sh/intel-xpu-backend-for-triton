@@ -24,6 +24,7 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
+#include <fstream>
 #include <iostream>
 
 namespace py = pybind11;
@@ -254,6 +255,15 @@ void init_triton_llvm(py::module &&m) {
         assert(kernels.size() == 1);
         std::string name = (*kernels.begin())->getName().str();
         std::string spirvBitcode = triton::translateLLVMIRToSPIRV(*module);
+        if (std::getenv("LLVM_SIMD")) {
+          std::cout << "parsing llvm simd" << std::endl;
+          std::ifstream inFile;
+          inFile.open("/home/gta/deweiwang/xpu/intel-xpu-backend-for-triton/"
+                      "python/tutorials/input.simd.spv");
+          std::stringstream strStream;
+          strStream << inFile.rdbuf();
+          spirvBitcode = strStream.str();
+        }
         return std::make_tuple(py::bytes(spirvBitcode), name);
       },
       ret::take_ownership);

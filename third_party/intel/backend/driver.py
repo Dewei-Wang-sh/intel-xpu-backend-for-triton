@@ -249,6 +249,8 @@ def make_launcher(constants, signature, ids):
     uint32_t num_params = sizeof(params)/sizeof(params[0]);
     uint32_t expected_num_params = kernel_ptr.get_info<sycl::info::kernel::num_args>();
     threads_per_warp = 16;
+    if (std::getenv("LLVM_SIMD"))
+      threads_per_warp = 1;
     size_t global_range_x = gridX*threads_per_warp*num_warps;
     size_t global_range_y = gridY;
     size_t global_range_z = gridZ;

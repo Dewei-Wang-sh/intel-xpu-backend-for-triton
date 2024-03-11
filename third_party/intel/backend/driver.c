@@ -139,6 +139,11 @@ ze_module_handle_t create_module(ze_context_handle_t context,
                                  ze_device_handle_t device,
                                  uint32_t *binary_ptr, size_t binary_size) {
   const char *build_flags = "";
+  if (std::getenv("LLVM_SIMD"))
+    build_flags =         
+        "-vc-codegen -doubleGRF -Xfinalizer -noLocalSplit -Xfinalizer "
+        "-DPASTokenReduction -Xfinalizer -SWSBDepReduction -Xfinalizer "
+        "'-printregusage -enableBCR' ";
   const ze_module_format_t format = ZE_MODULE_FORMAT_IL_SPIRV;
   ze_module_desc_t module_description = {};
   module_description.stype = ZE_STRUCTURE_TYPE_MODULE_DESC;
