@@ -404,6 +404,7 @@ void mlir::triton::populateTritonOpsToLLVMPatterns(
   patterns.add<GlueOpConversion>(typeConverter, target, benefit);
   patterns.add<ExtractOpConversion>(typeConverter, target, benefit);
   patterns.add<CastOpConversion>(typeConverter, target, benefit);
-  patterns.add<GPUSubgroupIdOpLowering>(typeConverter, target, benefit);
+  if (!std::getenv("USE_SUBGROUP_ID"))
+    patterns.add<GPUSubgroupIdOpLowering>(typeConverter, target, benefit);
   patterns.add<ArithConstantOpLowering>(typeConverter, target, benefit);
 }
