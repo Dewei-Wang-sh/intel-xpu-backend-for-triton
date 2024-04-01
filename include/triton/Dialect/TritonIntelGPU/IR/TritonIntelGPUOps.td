@@ -37,7 +37,7 @@ def TTIG_GlueOp : TTIG_Op<"glue", [// operands have same type: SameOperandsType,
                                Pure]> {
     let summary = "glue/concat opearands to a larger size";
 
-    let arguments = (ins Variadic<TT_TensorRelated>:$operands);
+    let arguments = (ins Variadic<TT_Type>:$operands);
 
     let results = (outs TT_TensorRelated:$result);
 
@@ -49,7 +49,7 @@ def TTIG_ExtractOp : TTIG_Op<"extract", [Pure]> {
 
     let arguments = (ins TT_TensorRelated:$base, I32Attr:$idx);
 
-    let results = (outs TT_TensorRelated:$result);
+    let results = (outs TT_Type:$result);
 
     let assemblyFormat = "$base `,` $idx attr-dict `:` type($base) `->` type($result)";
 }

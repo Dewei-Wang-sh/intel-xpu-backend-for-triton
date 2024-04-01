@@ -157,6 +157,31 @@ void StoreOp::print(OpAsmPrinter &printer) {
 namespace mlir {
 namespace triton {
 
+//-- AdvanceOp --
+// advance(ptr, 0, 0) -> ptr
+struct CanonicalizeAdvancePattern : public OpRewritePattern<AdvanceOp> {
+  CanonicalizeAdvancePattern(MLIRContext *context)
+      : OpRewritePattern<AdvanceOp>(context, 1) {}
+
+  LogicalResult matchAndRewrite(AdvanceOp op,
+                                PatternRewriter &rewriter) const override {
+    SmallVector<OpFoldResult> rawOffsets = op.getOffsets();
+    auto offsets = getConstantIntValues(rawOffsets);
+    if (!offsets.has_value())
+      return failure();
+    for (auto offset : offsets.value())
+      if (offset != 0)
+        return failure();
+    rewriter.replaceOp(op, op.getPtr());
+    return success();
+  }
+};
+
+void AdvanceOp::getCanonicalizationPatterns(RewritePatternSet &results,
+                                            MLIRContext *context) {
+  results.add<CanonicalizeAdvancePattern>(context);
+}
+
 //-- LoadOp --
 static Type getLoadOpResultType(OpBuilder &builder, Type ptrType) {
   auto ptrTensorType = ptrType.dyn_cast<RankedTensorType>();
