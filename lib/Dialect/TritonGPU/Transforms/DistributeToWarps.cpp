@@ -45,6 +45,14 @@ SmallVector<long> getSizePerWarp(RankedTensorType type, Attribute layout) {
     } else { // idx == 1, dot operand B
       sizePerWarp.assign({type.getShape()[0], parentSizePerWarp[1]});
     }
+  } else if (auto sLayout = dyn_cast<ttg::SliceEncodingAttr>(layout)) {
+    auto dim = sLayout.getDim();
+    assert(isa<ttg::BlockedEncodingAttr>(sLayout.getParent()) &&
+           "at this stage, parent layout should be blocked layout.");
+    auto parentSizePerWarp = getSizePerWarp(
+        type, cast<ttg::BlockedEncodingAttr>(sLayout.getParent()));
+    parentSizePerWarp.erase(parentSizePerWarp.begin() + dim);
+    return parentSizePerWarp;
   } else {
     llvm::report_fatal_error(
         "getSizePerWarp not implemented for this attribute");
@@ -64,6 +72,11 @@ Attribute getWarpLayout(Attribute layout) {
     auto newDotLayout = ttg::DotOperandEncodingAttr::get(
         ctx, dotLayout.getOpIdx(), parentLayout, dotLayout.getKWidth());
     return newDotLayout;
+  } else if (auto sLayout = dyn_cast<ttg::SliceEncodingAttr>(layout)) {
+    auto parentLayout = getWarpLayout(sLayout.getParent());
+    auto newSLayout =
+        ttg::SliceEncodingAttr::get(ctx, sLayout.getDim(), parentLayout);
+    return newSLayout;
   }
   return layout;
 }
@@ -75,6 +88,11 @@ RankedTensorType convertType<RankedTensorType>(RankedTensorType type) {
   auto layout = type.getEncoding();
   auto sizePerWarp = getSizePerWarp(type, layout);
   auto warpLayout = getWarpLayout(layout);
+  // hack for expandDimOp which has fixed 1 sized dim
+  for (auto i = 0; i < sizePerWarp.size(); i++) {
+    sizePerWarp[i] = std::min(sizePerWarp[i], type.getShape()[i]);
+  }
+
   auto newType =
       RankedTensorType::get(sizePerWarp, type.getElementType(), warpLayout);
   return newType;
@@ -211,6 +229,41 @@ void distributeMakeTensorPtrOp(tt::MakeTensorPtrOp op, Value warpId) {
   return;
 }
 
+RankedTensorType transformToTypeWithWarpAttr(RankedTensorType type) {
+  auto attr = type.getEncoding();
+  auto ctx = attr.getContext();
+  ttg::WarpEncodingAttr warpAttr;
+  if (auto dotAttr = dyn_cast<ttg::DotOperandEncodingAttr>(attr)) {
+    auto idx = dotAttr.getOpIdx();
+    auto parentAttr = cast<ttg::WarpEncodingAttr>(dotAttr.getParent());
+    SmallVector<unsigned> parentSize(parentAttr.getSizePerThread());
+    SmallVector<unsigned> parentThreads(parentAttr.getThreadsPerWarp());
+    if (idx == 0) {
+      parentSize[1] = type.getShape()[1];
+    } else {
+      parentSize[0] = type.getShape()[0];
+    }
+    warpAttr = ttg::WarpEncodingAttr::get(ctx, parentSize, parentThreads,
+                                          parentAttr.getOrder());
+  } else if (auto sAttr = dyn_cast<ttg::SliceEncodingAttr>(attr)) {
+    auto dim = sAttr.getDim();
+    auto parentAttr = cast<ttg::WarpEncodingAttr>(sAttr.getParent());
+    SmallVector<unsigned> parentSize(parentAttr.getSizePerThread());
+    SmallVector<unsigned> parentThreads(parentAttr.getThreadsPerWarp());
+    parentSize.erase(parentSize.begin() + dim);
+    parentThreads.erase(parentThreads.begin() + dim);
+    warpAttr = ttg::WarpEncodingAttr::get(ctx, parentSize, parentThreads,
+                                          parentAttr.getOrder());
+  } else if (auto wAttr = dyn_cast<ttg::WarpEncodingAttr>(attr)) {
+    warpAttr = wAttr;
+  } else {
+    assert(0 && "add more support");
+  }
+  auto newType =
+      RankedTensorType::get(type.getShape(), type.getElementType(), warpAttr);
+  return newType;
+}
+
 void distributeConvertLayoutOp(ttg::ConvertLayoutOp op, Value warpId,
                                RankedTensorType oldSrcType) {
   auto loc = op.getLoc();
@@ -220,6 +273,17 @@ void distributeConvertLayoutOp(ttg::ConvertLayoutOp op, Value warpId,
   auto dstPtrType = tt::PointerType::get(convertedDstType, 3 /* shared mem*/);
   auto srcPtrType =
       tt::PointerType::get(op.getSrc().getType(), 3 /* shared mem*/);
+  // early return
+  {
+    auto srcTy = transformToTypeWithWarpAttr(op.getSrc().getType());
+    auto dstTy = transformToTypeWithWarpAttr(convertedDstType);
+    if (srcTy == dstTy) {
+      // op.replaceAllUsesWith(op.getSrc());
+      // op->erase();
+      op.getResult().setType(convertedDstType);
+      return;
+    }
+  }
 
   // fixme: allocOp may carry the size info, tt::PointerType::get(oldSrcType)
   // fixme: set addrspace 1 instead of 3 to avoid makeTensorOp type match
@@ -287,16 +351,23 @@ public:
       auto subgroupId = b.create<gpu::SubgroupIdOp>(loc);
       auto warpId =
           b.create<arith::IndexCastOp>(loc, b.getI32Type(), subgroupId);
+      Dialect *arithDialect = context->getLoadedDialect("arith");
+      Dialect *mathDialect = context->getLoadedDialect("math");
       // record old type before transform
       DenseMap<Operation *, RankedTensorType> typeMap;
       func.walk([&](ttg::ConvertLayoutOp op) {
         typeMap[op] = op.getSrc().getType().cast<RankedTensorType>();
       });
+      auto hasTensorType = [](Type type) {
+        if (isa<RankedTensorType>(type))
+          return true;
+        else if (auto ptrType = dyn_cast<tt::PointerType>(type))
+          if (isa<RankedTensorType>(ptrType.getPointeeType()))
+            return true;
+        return false;
+      };
       func.walk<WalkOrder::PreOrder>([&](Operation *op) {
-        if (llvm::all_of(op->getResultTypes(), [&](Type type) {
-              return !isa<RankedTensorType>(type) &&
-                     !isa<tt::PointerType>(type);
-            }))
+        if (!llvm::any_of(op->getResultTypes(), hasTensorType))
           ;
         else if (auto forOp = dyn_cast<scf::ForOp>(op))
           distributeScfForOp(forOp);
@@ -306,7 +377,10 @@ public:
           distributeArithConstantOp(cstOp);
         else if (auto convertOp = dyn_cast<ttg::ConvertLayoutOp>(op))
           distributeConvertLayoutOp(convertOp, warpId, typeMap[convertOp]);
-        else if (isa<tt::LoadOp, tt::DotOp, tt::AdvanceOp, arith::TruncFOp>(op))
+        else if (isa<tt::LoadOp, tt::DotOp, tt::AdvanceOp, tt::ReduceOp,
+                     tt::SplatOp, tt::BroadcastOp, tt::ExpandDimsOp>(op) ||
+                 op->getDialect() == arithDialect ||
+                 op->getDialect() == mathDialect)
           distributeGenericOp(op);
         else
           assert(0 && "op not considered");
