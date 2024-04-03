@@ -174,7 +174,7 @@ public:
    } else if constexpr (isPrefetch) {
      auto load = rewriter.create<GENX::Matrix2DBlockPrefetchOp>(
          loc, base, surfaceW, surfaceH, surfaceP, offsetX, offsetY,
-         dataSize, blockWidth, blockHeight, 1 /*v_blocks*/, transpose,
+         dataSize, blockWidth / 2, blockHeight, 2 /*v_blocks*/, transpose,
          vnni);
      rewriter.eraseOp(op);
     } else {

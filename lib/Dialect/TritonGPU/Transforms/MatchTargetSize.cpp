@@ -101,7 +101,7 @@ private:
     int64_t colLimit = 0;
     if (auto warpAttr = dyn_cast<ttg::WarpEncodingAttr>(layout)) {
       colLimit = 32;
-      colLimit = 16;
+      //colLimit = 16;
       // if (warpAttr.getIsDotC())
       if (warpAttr.getSizePerThread()[1] == 64) {
         colLimit = nStep;
