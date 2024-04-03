@@ -611,6 +611,36 @@ struct TritonSubGroupShuffleLowering
   }
 };
 
+struct TritonSubgroupReduceLowering
+    : public ConvertOpToLLVMPattern<TritonGEN::SubgroupReduceOp> {
+  using ConvertOpToLLVMPattern<
+      TritonGEN::SubgroupReduceOp>::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(TritonGEN::SubgroupReduceOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    auto moduleOp =
+        rewriter.getBlock()->getParent()->getParentOfType<ModuleOp>();
+    MLIRContext *context = rewriter.getContext();
+    Location loc = op->getLoc();
+    Value val = op.getValue();
+    auto kind = op.getKind();
+    const StringLiteral funcName =
+        "llvm.genx.GenISA.WaveAll.f32"; // f32 for now
+    IntegerType i8Ty = rewriter.getIntegerType(8);
+    IntegerType i32Ty = rewriter.getIntegerType(32);
+    SmallVector<Type> argTypes{val.getType(), i8Ty, i32Ty};
+    LLVM::LLVMFuncOp funcOp =
+        LLVM::lookupOrCreateFn(moduleOp, funcName, argTypes, val.getType());
+    funcOp.setCConv(LLVM::cconv::CConv::SPIR_FUNC);
+    SmallVector<Value> args{val,
+                            rewriter.create<LLVM::ConstantOp>(loc, i8Ty, kind),
+                            rewriter.create<LLVM::ConstantOp>(loc, i32Ty, 0)};
+    LLVM::CallOp callOp = rewriter.create<LLVM::CallOp>(loc, funcOp, args);
+    rewriter.replaceOp(op, callOp);
+    return success();
+  }
+};
 //===----------------------------------------------------------------------===//
 // Matrix operations
 //===----------------------------------------------------------------------===//
@@ -727,17 +757,17 @@ struct TritonGENToLLVMDialectInterface : public ConvertToLLVMPatternInterface {
 
 void mlir::triton::populateTritonGENToLLVMConversionPatterns(
     LLVMTypeConverter &converter, RewritePatternSet &patterns) {
-  patterns
-      .add<TritonGENThreadIdXLowering, TritonGENThreadIdYLowering,
-           TritonGENThreadIdZLowering, TritonGENBlockIdXLowering,
-           TritonGENBlockIdYLowering, TritonGENBlockIdZLowering,
-           TritonGENBlockDimXLowering, TritonGENBlockDimYLowering,
-           TritonGENBlockDimZLowering, TritonGENGridDimXLowering,
-           TritonGENGridDimYLowering, TritonGENGridDimZLowering,
-           TritonGENSubgroupIdLowering, TritonGENBarrierLowering,
-           TritonSubGroupShuffleLowering, TritonMatrixDPASLowering,
-           TritonMatrix2DBlockLoadLowering, TritonMatrix2DBlockStoreLowering,
-           TritonMatrix2DBlockPrefetchLowering>(converter);
+  patterns.add<TritonGENThreadIdXLowering, TritonGENThreadIdYLowering,
+               TritonGENThreadIdZLowering, TritonGENBlockIdXLowering,
+               TritonGENBlockIdYLowering, TritonGENBlockIdZLowering,
+               TritonGENBlockDimXLowering, TritonGENBlockDimYLowering,
+               TritonGENBlockDimZLowering, TritonGENGridDimXLowering,
+               TritonGENGridDimYLowering, TritonGENGridDimZLowering,
+               TritonGENSubgroupIdLowering, TritonGENBarrierLowering,
+               TritonSubGroupShuffleLowering, TritonSubgroupReduceLowering,
+               TritonMatrixDPASLowering, TritonMatrix2DBlockLoadLowering,
+               TritonMatrix2DBlockStoreLowering,
+               TritonMatrix2DBlockPrefetchLowering>(converter);
 }
 
 void registerConvertTritonTritonGENToLLVMInterface(DialectRegistry &registry) {
