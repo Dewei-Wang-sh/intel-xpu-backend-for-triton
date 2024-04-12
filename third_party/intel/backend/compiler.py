@@ -177,10 +177,10 @@ class XPUBackend(BaseBackend):
         # TritonGPU -> LLVM-IR (MLIR)
         pm = ir.pass_manager(mod.context)
         pm.enable_debug()
-        intel.passes.ttgpuir.add_decompose_unsupported_conversions(pm)
+        # intel.passes.ttgpuir.add_decompose_unsupported_conversions(pm)
         passes.convert.add_scf_to_cf(pm)
         passes.convert.add_index_to_llvmir(pm)
-        intel.passes.ttgpuir.add_allocate_shared_memory(pm)
+        # intel.passes.ttgpuir.add_allocate_shared_memory(pm)
         intel.passes.ttgpuir.add_to_llvmir(pm, capability)
         passes.convert.add_arith_to_llvmir(pm)
         passes.common.add_canonicalizer(pm)
@@ -202,7 +202,7 @@ class XPUBackend(BaseBackend):
         llvm.optimize_module(llvm_mod, llvm.OPTIMIZE_O3)
         if os.environ.get("FROM_LLVM", ""):
             llvm_mod = llvm.parse_ir_file(
-                "/home/gta/deweiwang/xpu2/intel-xpu-backend-for-triton/python/tutorials/input.ll", context)
+                "/home/gta/deweiwang/xpu2/intel-xpu-backend-for-triton/input.ll", context)
         print("second llvm module")
         print(llvm_mod)
         # Get some metadata

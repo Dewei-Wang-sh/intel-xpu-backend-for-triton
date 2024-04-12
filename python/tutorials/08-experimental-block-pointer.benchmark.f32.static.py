@@ -250,9 +250,9 @@ for i in range(512):
         line_arg='provider',
         # argument name whose value corresponds to a different line in the plot
         # possible values for `line_arg``
-        line_vals=['onednn', 'triton'],
+        line_vals=['triton', 'onednn'],
         # label name for the lines
-        line_names=["oneDNN", "Triton"],
+        line_names=["Triton", "oneDNN"],
         # line styles
         #styles=[('green', '-'), ('green', '--'), ('blue', '-'), ('blue', '--')],
         ylabel="TFLOPS",  # label name for the y-axis
@@ -263,12 +263,14 @@ for i in range(512):
 def benchmark(M, N, K, provider):
     a = torch.randn((M, K), device='xpu', dtype=torch.float16)
     b = torch.randn((K, N), device='xpu', dtype=torch.float16)
+    #a = torch.zeros((M, K), device='xpu', dtype=torch.float16)
+    #b = torch.zeros((K, N), device='xpu', dtype=torch.float16)
     quantiles = [0.5, 0.2, 0.8]
     if provider == 'onednn':
-        ms, min_ms, max_ms = triton.testing.do_bench(lambda: torch.matmul(a, b), rep=100, quantiles=quantiles,
+        ms, min_ms, max_ms = triton.testing.do_bench(lambda: torch.matmul(a, b), rep=1000, quantiles=quantiles,
                                                      fast_flush=False)
     if provider == 'triton':
-        ms, min_ms, max_ms = triton.testing.do_bench(lambda: matmul(a, b), rep=100, quantiles=quantiles,
+        ms, min_ms, max_ms = triton.testing.do_bench(lambda: matmul(a, b), rep=1000, quantiles=quantiles,
                                                      fast_flush=False)
 
     def perf(ms):

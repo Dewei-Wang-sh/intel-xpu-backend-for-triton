@@ -132,18 +132,19 @@ public:
 
     auto insertPoint = rewriter.saveInsertionPoint();
     rewriter.setInsertionPointAfter(ptrOp);
+    transpose = ptrOp.getOrder()[0] == 0;
     auto bytes = createIntConstant(
         i32Type, tType.getElementType().getIntOrFloatBitWidth() / 8);
     auto one = createIntConstant(i32Type, 1);
     Value surfaceW =
-        rewriter.create<arith::TruncIOp>(loc, i32Type, ptrOp.getShape()[1]);
+        rewriter.create<arith::TruncIOp>(loc, i32Type, transpose ? ptrOp.getShape()[0] : ptrOp.getShape()[1]);
     surfaceW = rewriter.create<arith::MulIOp>(loc, surfaceW, bytes);
     surfaceW = rewriter.create<arith::SubIOp>(loc, surfaceW, one);
     Value surfaceH =
-        rewriter.create<arith::TruncIOp>(loc, i32Type, ptrOp.getShape()[0]);
+        rewriter.create<arith::TruncIOp>(loc, i32Type, transpose ? ptrOp.getShape()[1] : ptrOp.getShape()[0]);
     surfaceH = rewriter.create<arith::SubIOp>(loc, surfaceH, one);
     Value surfaceP =
-        rewriter.create<arith::TruncIOp>(loc, i32Type, ptrOp.getStrides()[0]);
+        rewriter.create<arith::TruncIOp>(loc, i32Type, transpose ? ptrOp.getStrides()[1] : ptrOp.getStrides()[0]);
     surfaceP = rewriter.create<arith::MulIOp>(loc, surfaceP, bytes);
     surfaceP = rewriter.create<arith::SubIOp>(loc, surfaceP, one);
     rewriter.restoreInsertionPoint(insertPoint);
@@ -157,9 +158,9 @@ public:
       return VectorType::get(num, elemType);
     };
     auto tensorPtr = adaptor.getPtr();
-    auto offsetX =
+    Value offsetX =
         rewriter.create<LLVM::ExtractElementOp>(loc, tensorPtr, idx0);
-    auto offsetY =
+    Value offsetY =
         rewriter.create<LLVM::ExtractElementOp>(loc, tensorPtr, idx1);
     if constexpr (isLoad) {
       auto resType =
@@ -167,12 +168,30 @@ public:
       auto idxAttr = op->template getAttrOfType<mlir::IntegerAttr>("DotIdx");
       auto idx = idxAttr.getInt();
       auto intType = getIntType(op->getResult(0).getType(), idx == 0);
+      // fixed f16 for now
+      if (ptrOp.getOrder()[0] == 0) {
+        transpose = true;
+        vnni = false;
+        dataSize = 32;
+        blockWidth /= 2;
+        auto one = createIntConstant(i32Type, 1);
+        Value tmp = offsetX;
+        offsetX = rewriter.create<LLVM::LShrOp>(loc, offsetY, one);
+        offsetY = tmp;
+      }
       auto load = rewriter.create<TritonGEN::Matrix2DBlockLoadOp>(
           loc, intType, base, surfaceW, surfaceH, surfaceP, offsetX, offsetY,
           dataSize, blockWidth, blockHeight, vBlks, transpose, vnni);
       auto cast = rewriter.create<LLVM::BitcastOp>(loc, resType, load);
       rewriter.replaceOp(op, cast);
     } else if constexpr (isPrefetch) {
+      if (ptrOp.getOrder()[0] == 0) {
+        transpose = false;
+        vnni = false;
+        Value tmp = offsetX;
+        offsetX = offsetY;
+        offsetY = tmp;
+      }
       auto load = rewriter.create<TritonGEN::Matrix2DBlockPrefetchOp>(
           loc, base, surfaceW, surfaceH, surfaceP, offsetX, offsetY, dataSize,
           blockWidth, blockHeight, vBlks, transpose, vnni,

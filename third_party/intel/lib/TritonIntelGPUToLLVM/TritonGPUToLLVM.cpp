@@ -204,9 +204,13 @@ struct ConvertTritonGPUToLLVM
     auto enableBlockPtr =
         mlir::triton::tools::getBoolEnv("INTEL_ENABLE_BLOCK_PTR");
     // fixme: set subgroupSize 16 for now
-    if (enableBlockPtr)
+    if (enableBlockPtr) {
       mod->setAttr("triton_gpu.threads-per-warp",
                    IntegerAttr::get(IntegerType::get(context, 32), 16));
+      mod->setAttr(
+          "triton_gpu.shared",
+          mlir::IntegerAttr::get(mlir::IntegerType::get(context, 32), 0));
+    }
 
     mlir::LowerToLLVMOptions option(context);
     option.overrideIndexBitwidth(32);

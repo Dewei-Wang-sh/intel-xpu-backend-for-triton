@@ -43,6 +43,7 @@ public:
     auto *ctx = &getContext();
     ModuleOp m = getOperation();
     dotAttrs.clear();
+    // transposedAttrs.clear();
     sizePerAttrMap.clear();
     // set default supported dot size
     if (!dotSize.hasValue()) {
@@ -50,7 +51,7 @@ public:
       dotSize.addValue(16);
       dotSize.addValue(16);
     }
-    // for (auto dot : m.getOps<tt::DotOp>()) {
+    // for (auto dot : m.getOps<tt::DotOp>())
     // FIXME: what if other op(not in the chain) has the same encoding with dotC
     m.walk([&](tt::DotOp dot) {
       auto type = cast<RankedTensorType>(dot.getResult().getType());
@@ -102,6 +103,9 @@ public:
       } else if (auto dot = dyn_cast<tt::DotOp>(op))
         transformDotOp(dot);
       else if (auto ptrOp = dyn_cast<tt::MakeTensorPtrOp>(op)) {
+        // Attribute attr = getEncoding(op->getResultTypes()[0]);
+        // if (ptrOp.getOrder()[0] == 0 && isa<ttg::DotOperandEncodingAttr>(attr))
+        //   transposedAttrs.insert(attr);
         recordRootSubSize(op->getResultTypes()[0]);
         transformMakeTensorPtrOp(ptrOp);
       }
@@ -124,6 +128,14 @@ public:
 private:
   DenseMap<Attribute, SmallVector<int64_t>> sizePerAttrMap;
   DenseSet<Attribute> dotAttrs;
+  // DenseSet<Attribute> transposedAttrs;
+  Attribute getEncoding(Type type) {
+    if (auto tensorType = dyn_cast<RankedTensorType>(type))
+      return tensorType.getEncoding();
+    else if (auto ptrType = dyn_cast<tt::PointerType>(type))
+      return getEncoding(ptrType.getPointeeType());
+    return {};
+  }
   void recordRootSubSize(Type type) {
     if (auto tensorType = dyn_cast<RankedTensorType>(type)) {
       auto layout = tensorType.getEncoding();
@@ -147,6 +159,8 @@ private:
       colLimit = 32;
     } else if (auto dotAttr = dyn_cast<ttg::DotOperandEncodingAttr>(layout)) {
       colLimit = 32;
+      if (dotAttr.getKWidth() != 0 && dotAttr.getOpIdx() == 1)
+        return {kStep, nStep};
     }
     auto shape = type.getShape();
     SmallVector<int64_t> subSize(shape.size());

@@ -213,8 +213,15 @@ public:
             valueAttrMap[op] = dotALayout;
           for (auto op : info0.chainOpsB)
             valueAttrMap[op] = dotBLayout;
-          for (auto op : info0.chainOpsC)
-            valueAttrMap[op] = dotCLayout;
+
+          // for (auto op : info0.chainOpsC)
+          //   valueAttrMap[op] = dotCLayout;
+          DenseSet<Value> chainedVals{info0.chainOpsC.begin(),
+                                      info0.chainOpsC.end()};
+          expandUseChain(info0.dot, chainedVals);
+          for (auto val : chainedVals)
+            valueAttrMap[val] = dotCLayout;
+
           if (info0.advanceA)
             valueAttrMap[info0.advanceA] = dotALayout;
           if (info0.advanceB)
@@ -256,9 +263,10 @@ public:
           auto qkLayout0 = ttg::BlockedEncodingAttr::get(
               ctx, sizePerWarpQK, {1, 1}, warpsPerCTA, {1, 0}, ctaLayout);
           auto qLayout = ttg::DotOperandEncodingAttr::get(
-              ctx, 0, qkLayout0, aType.getElementType());
+              ctx, 0, qkLayout0, 1);
+          // fixme
           auto kLayout = ttg::DotOperandEncodingAttr::get(
-              ctx, 1, qkLayout0, bType.getElementType());
+              ctx, 1, qkLayout0, 1);
 
           // record value's attr
           // fixme: the 2nd loop may overwrite, not check it for now
@@ -657,7 +665,21 @@ public:
         for (auto operand : user->getOperands()) {
           expandDefChain(operand, chainedVals);
         }
-      } else if (isa<tt::ExpandDimsOp, scf::YieldOp>(user)) {
+      } else if (auto yield = dyn_cast<scf::YieldOp>(user)) {
+        unsigned resNum = -1;
+        unsigned i = 0;
+        for (auto operand : user->getOperands()) {
+          if (operand == val) {
+            resNum = i;
+            break;
+          }
+          i++;
+        }
+        auto loop = dyn_cast<scf::ForOp>(yield->getParentOp());
+        auto res = loop.getResult(resNum);
+        chainedVals.insert(res);
+        expandUseChain(res, chainedVals);
+      } else if (isa<tt::ExpandDimsOp, tt::SplatOp, tt::StoreOp>(user)) {
         ;
       } else {
         assert(0 && "add more support");
