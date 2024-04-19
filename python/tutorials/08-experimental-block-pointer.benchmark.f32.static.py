@@ -125,8 +125,15 @@ import triton.language as tl
 @triton.jit
 def matmul_kernel_with_block_pointers(
         # Pointers to matrices
-        a_ptr, b_ptr, c_ptr, M, N, K,
+        a_ptr, b_ptr, c_ptr,
         # Matrix dimensions
+        M, N, K,
+        # The stride variables represent how much to increase the ptr by when moving by 1
+        # element in a particular dimension. E.g. `stride_am` is how much to increase `a_ptr`
+        # by to get the element one row down (A has M rows).
+        stride_am, stride_ak,  #
+        stride_bk, stride_bn,  #
+        stride_cm, stride_cn,        
         # Meta-parameters
         BLOCK_SIZE_M: tl.constexpr, BLOCK_SIZE_N: tl.constexpr, BLOCK_SIZE_K: tl.constexpr, GROUP_SIZE_M: tl.constexpr):
     """Kernel for computing the matmul C = A x B.
@@ -137,8 +144,8 @@ def matmul_kernel_with_block_pointers(
     # This is done in a grouped ordering to promote L2 data reuse.
     # See the matrix multiplication tutorial for details.
     pid = tl.program_id(axis=0)
-    num_pid_m = tl.cdiv(4096, BLOCK_SIZE_M)
-    num_pid_n = tl.cdiv(4096, BLOCK_SIZE_N)
+    num_pid_m = tl.cdiv(M, BLOCK_SIZE_M)
+    num_pid_n = tl.cdiv(N, BLOCK_SIZE_N)
     num_pid_in_group = GROUP_SIZE_M * num_pid_n
     group_id = pid // num_pid_in_group
     first_pid_m = group_id * GROUP_SIZE_M
@@ -150,10 +157,10 @@ def matmul_kernel_with_block_pointers(
     # Create block pointers for the first blocks of A and B.
     # We will advance this pointer as we move in the K direction and accumulate.
     # See above `Make a Block Pointer` section for details.
-    a_block_ptr = tl.make_block_ptr(base=a_ptr, shape=(4096, 4096), strides=(4096, 1),
+    a_block_ptr = tl.make_block_ptr(base=a_ptr, shape=(M, K), strides=(stride_am, stride_ak),
                                     offsets=(pid_m * BLOCK_SIZE_M, 0), block_shape=(BLOCK_SIZE_M, BLOCK_SIZE_K),
                                     order=(1, 0))
-    b_block_ptr = tl.make_block_ptr(base=b_ptr, shape=(4096, 4096), strides=(4096, 1),
+    b_block_ptr = tl.make_block_ptr(base=b_ptr, shape=(K, N), strides=(stride_bk, stride_bn),
                                     offsets=(0, pid_n * BLOCK_SIZE_N), block_shape=(BLOCK_SIZE_K, BLOCK_SIZE_N),
                                     order=(1, 0))
 
@@ -163,7 +170,7 @@ def matmul_kernel_with_block_pointers(
     # of fp32 values for higher accuracy.
     # `accumulator` will be converted back to fp16 after the loop.
     accumulator = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=tl.float32)
-    for k in range(0, 4096, BLOCK_SIZE_K):
+    for k in range(0, K, BLOCK_SIZE_K):
         # Load with boundary checks, no need to calculate the mask manually.
         # For better performance, you may remove some axis from the boundary
         # check, if you can guarantee that the access is always in-bound in
@@ -181,7 +188,7 @@ def matmul_kernel_with_block_pointers(
     # ----------------------------------------------------------------
     # Write back the block of the output matrix C with boundary checks.
     # See above `Load/Store a Block Pointer` section for details.
-    c_block_ptr = tl.make_block_ptr(base=c_ptr, shape=(4096, 4096), strides=(4096, 1),
+    c_block_ptr = tl.make_block_ptr(base=c_ptr, shape=(M, N), strides=(stride_cm, stride_cn),
                                     offsets=(pid_m * BLOCK_SIZE_M, pid_n * BLOCK_SIZE_N),
                                     block_shape=(BLOCK_SIZE_M, BLOCK_SIZE_N), order=(1, 0))
     tl.store(c_block_ptr, accumulator, boundary_check=(0, 1))
@@ -200,7 +207,12 @@ def matmul(a, b):
     c = torch.empty((M, N), device=a.device, dtype=torch.float32)
     # 1D launch kernel where each block gets its own program.
     grid = lambda META: (triton.cdiv(M, META['BLOCK_SIZE_M']) * triton.cdiv(N, META['BLOCK_SIZE_N']), )
-    matmul_kernel_with_block_pointers[grid](a, b, c, M, N, K)
+    matmul_kernel_with_block_pointers[grid](
+        a, b, c,  #
+        M, N, K,  #
+        a.stride(0), a.stride(1),  #
+        b.stride(0), b.stride(1),  #
+        c.stride(0), c.stride(1))
     return c
 
 
@@ -244,8 +256,10 @@ for i in range(512):
     triton.testing.Benchmark(
         # argument names to use as an x-axis for the plot
         x_names=['M', 'N', 'K'],
-        x_vals=[
-            [4096, 4096, 4096],
+        x_vals=[          
+            # [5120, 5120, 4096],
+            # [4, 4096, 512],
+            [128 * i, 128 * i, 128 * i] for i in [30]
         ],  # different possible values for `x_name`
         line_arg='provider',
         # argument name whose value corresponds to a different line in the plot
@@ -264,17 +278,20 @@ def benchmark(M, N, K, provider):
     a = torch.randn((M, K), device='xpu', dtype=torch.float16)
     b = torch.randn((K, N), device='xpu', dtype=torch.float16)
     quantiles = [0.5, 0.2, 0.8]
+
+    # calculate tflops for oneDNN kernel 
+    def calculate_tflops(ms):
+        return 2 * M * N * K * 1e-12 / (ms * 1e-3)
+    
     if provider == 'onednn':
         ms, min_ms, max_ms = triton.testing.do_bench(lambda: torch.matmul(a, b), rep=100, quantiles=quantiles,
                                                      fast_flush=False)
+        print(f"oneDNN Peak TFlops {calculate_tflops(min_ms)}")                                                
     if provider == 'triton':
         ms, min_ms, max_ms = triton.testing.do_bench(lambda: matmul(a, b), rep=100, quantiles=quantiles,
                                                      fast_flush=False)
 
-    def perf(ms):
-        return 2 * M * N * K * 1e-12 / (ms * 1e-3)
-
-    return perf(ms), perf(max_ms), perf(min_ms)
+    return calculate_tflops(ms), calculate_tflops(min_ms), calculate_tflops(max_ms)
 
 
-benchmark.run(show_plots=False, print_data=True)
+benchmark.run(show_plots=True, print_data=True)

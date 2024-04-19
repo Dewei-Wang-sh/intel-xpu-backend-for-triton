@@ -255,12 +255,14 @@ def make_launcher(constants, signature, ids):
     size_t local_range_x = num_warps*threads_per_warp;
     size_t local_range_y = 1;
     size_t local_range_z = 1;
+    /***
     std::cout<< "threads_per_warp"<< threads_per_warp << std::endl;
     std::cout<< "num_warps"<< num_warps << std::endl;
     std::cout<< "global_range_x"<< global_range_x << std::endl;
     std::cout<< "global_range_y"<< global_range_y << std::endl;
     std::cout<< "global_range_z"<< global_range_z << std::endl;
     std::cout<< "local_range_x"<< local_range_x << std::endl;
+    ***/
     sycl::range<3> global_range(global_range_z, global_range_y, global_range_x);
     sycl::range<3> local_range(local_range_z, local_range_y, local_range_x);
     sycl::nd_range<3> parallel_work_size(global_range, local_range);
@@ -287,7 +289,12 @@ def make_launcher(constants, signature, ids):
     auto endTime = event.get_profiling_info<
         sycl::info::event_profiling::command_end>();
     auto gap = float(endTime - startTime) / 1000000.0f;
-    std::cout << "TFlops " << (0.13743895347/(gap * 1e-3)) << std::endl;
+    // calculate tflops for triton kernel
+    // 0.2147483648 = 2 * 5120 * 5120 * 4096 *(1e-12)
+    // 0.000016777216 = 2 * 4 * 4096 * 512 *(1e-12)
+    float M = 128 * 30;
+    float throughput = 2 * M * M * M *(1e-12);     
+    std::cout << "Triton Peak TFlops " << (throughput/(gap * 1e-3)) << std::endl;
 
   }}
 // end sycl
