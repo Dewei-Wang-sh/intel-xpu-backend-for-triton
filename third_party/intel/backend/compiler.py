@@ -139,6 +139,10 @@ class XPUBackend(BaseBackend):
             passes.common.add_symbol_dce(pm)
             pm.run(mod)
             metadata["cluster_dims"] = (cluster_info.clusterDimX, cluster_info.clusterDimY, cluster_info.clusterDimZ)
+            # if os.environ.get("FROM_MLIR", ""):
+            #     print("from mlir", flush=True)
+            #     mod = ir.parse_mlir_module(
+            #         "/home/gta/deweiwang/xpu2/intel-xpu-backend-for-triton/python/tutorials/input.mlir", mod.context)
             return mod
         passes.ttir.add_convert_to_ttgpuir(pm, opt.num_warps, opt.threads_per_warp, opt.num_ctas, capability)
         # optimize TTGIR
@@ -189,6 +193,10 @@ class XPUBackend(BaseBackend):
         if os.environ.get("TRITON_DISABLE_LINE_INFO", "0") == "0":
             passes.llvmir.add_di_scope(pm)
         pm.run(mod)
+        if os.environ.get("FROM_MLIR", ""):
+            print("from mlir", flush=True)
+            mod = ir.parse_mlir_module(
+                "/home/gta/deweiwang/xpu2/intel-xpu-backend-for-triton/python/tutorials/input.attn.0522.mlir", mod.context)
         # LLVM-IR (MLIR) -> LLVM-IR (LLVM)
         llvm.init_targets()
         context = llvm.context()
@@ -201,8 +209,9 @@ class XPUBackend(BaseBackend):
                 llvm.link_extern_lib(llvm_mod, path)
         llvm.optimize_module(llvm_mod, llvm.OPTIMIZE_O3)
         if os.environ.get("FROM_LLVM", ""):
+            print("from llvm", flush=True)
             llvm_mod = llvm.parse_ir_file(
-                "/home/gta/deweiwang/xpu2/intel-xpu-backend-for-triton/input.ll", context)
+                "/home/gta/deweiwang/xpu2/intel-xpu-backend-for-triton/python/tutorials/input.attn.ll", context)
         print("second llvm module")
         print(llvm_mod)
         # Get some metadata

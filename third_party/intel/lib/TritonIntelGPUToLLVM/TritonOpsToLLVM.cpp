@@ -136,15 +136,16 @@ public:
     auto bytes = createIntConstant(
         i32Type, tType.getElementType().getIntOrFloatBitWidth() / 8);
     auto one = createIntConstant(i32Type, 1);
-    Value surfaceW =
-        rewriter.create<arith::TruncIOp>(loc, i32Type, transpose ? ptrOp.getShape()[0] : ptrOp.getShape()[1]);
+    Value surfaceW = rewriter.create<arith::TruncIOp>(
+        loc, i32Type, transpose ? ptrOp.getShape()[0] : ptrOp.getShape()[1]);
     surfaceW = rewriter.create<arith::MulIOp>(loc, surfaceW, bytes);
     surfaceW = rewriter.create<arith::SubIOp>(loc, surfaceW, one);
-    Value surfaceH =
-        rewriter.create<arith::TruncIOp>(loc, i32Type, transpose ? ptrOp.getShape()[1] : ptrOp.getShape()[0]);
+    Value surfaceH = rewriter.create<arith::TruncIOp>(
+        loc, i32Type, transpose ? ptrOp.getShape()[1] : ptrOp.getShape()[0]);
     surfaceH = rewriter.create<arith::SubIOp>(loc, surfaceH, one);
-    Value surfaceP =
-        rewriter.create<arith::TruncIOp>(loc, i32Type, transpose ? ptrOp.getStrides()[1] : ptrOp.getStrides()[0]);
+    Value surfaceP = rewriter.create<arith::TruncIOp>(
+        loc, i32Type,
+        transpose ? ptrOp.getStrides()[1] : ptrOp.getStrides()[0]);
     surfaceP = rewriter.create<arith::MulIOp>(loc, surfaceP, bytes);
     surfaceP = rewriter.create<arith::SubIOp>(loc, surfaceP, one);
     rewriter.restoreInsertionPoint(insertPoint);
@@ -294,7 +295,8 @@ public:
       auto shfl = rewriter.create<LLVM::ShuffleVectorOp>(loc, dstType, shfl01,
                                                          shfl23, attr);
       rewriter.replaceOp(op, shfl);
-    } else if (num == 8) {
+    } else if (num == 8 || num == 16) {
+      // only scalar for now
       Value undef = rewriter.create<LLVM::UndefOp>(loc, dstType);
       for (auto i = 0; i < num; i++) {
         undef = rewriter.create<LLVM::InsertElementOp>(
@@ -499,6 +501,29 @@ class ArithConstantOpLowering
   }
 };
 
+class ArithDivFOpLowering
+    : public ConvertTritonGPUOpToLLVMPattern<mlir::arith::DivFOp> {
+  using ConvertTritonGPUOpToLLVMPattern<
+      mlir::arith::DivFOp>::ConvertTritonGPUOpToLLVMPattern;
+  LogicalResult
+  matchAndRewrite(mlir::arith::DivFOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    Location loc = op->getLoc();
+    auto srcType = dyn_cast<ShapedType>(op.getType());
+    Type dstType = getTypeConverter()->convertType(srcType);
+    auto vecType = cast<VectorType>(dstType);
+    auto val = APFloat(1.0);
+    auto dstAttr = DenseElementsAttr::get(vecType, val);
+    auto one = rewriter.create<LLVM::ConstantOp>(loc, dstType, dstAttr);
+    auto rcp =
+        rewriter.create<LLVM::FDivOp>(loc, dstType, one, adaptor.getRhs());
+    auto res =
+        rewriter.create<LLVM::FMulOp>(loc, dstType, adaptor.getLhs(), rcp);
+    rewriter.replaceOp(op, res);
+    return success();
+  }
+};
+
 } // namespace
 
 void mlir::triton::intel::populateTritonOpsToLLVMPatterns(
@@ -520,4 +545,5 @@ void mlir::triton::intel::populateTritonOpsToLLVMPatterns(
   patterns.add<ExpandDimsOpConversion>(typeConverter, benefit);
   patterns.add<BroadcastOpConversion>(typeConverter, benefit);
   patterns.add<ArithConstantOpLowering>(typeConverter, benefit);
+  patterns.add<ArithDivFOpLowering>(typeConverter, benefit);
 }

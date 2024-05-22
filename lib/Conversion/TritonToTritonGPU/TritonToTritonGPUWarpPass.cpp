@@ -262,11 +262,9 @@ public:
           // add convert layout op for dot1.A
           auto qkLayout0 = ttg::BlockedEncodingAttr::get(
               ctx, sizePerWarpQK, {1, 1}, warpsPerCTA, {1, 0}, ctaLayout);
-          auto qLayout = ttg::DotOperandEncodingAttr::get(
-              ctx, 0, qkLayout0, 1);
+          auto qLayout = ttg::DotOperandEncodingAttr::get(ctx, 0, qkLayout0, 1);
           // fixme
-          auto kLayout = ttg::DotOperandEncodingAttr::get(
-              ctx, 1, qkLayout0, 1);
+          auto kLayout = ttg::DotOperandEncodingAttr::get(ctx, 1, qkLayout0, 1);
 
           // record value's attr
           // fixme: the 2nd loop may overwrite, not check it for now
@@ -284,6 +282,16 @@ public:
           assert(info1.chainOpsA.empty());
           for (auto val : info1.chainOpsB)
             valueAttrMap[val] = vLayout;
+          {
+            Value val = info1.dot;
+            DenseSet<Value> chainedVals;
+            chainedVals.insert(val);
+            expandUseChain(val, chainedVals);
+            for (auto val : chainedVals) {
+              valueAttrMap[val] = oLayout;
+            }
+          }
+          /// fixme fixme
           for (auto val : info1.chainOpsC) {
             if (valueAttrMap.count(val) == 0)
               valueAttrMap[val] = oLayout;
@@ -703,7 +711,10 @@ public:
           expandDefChain(operand, chainedVals);
           expandUseChain(operand, chainedVals);
         }
-      } else if (isa<tt::SplatOp, tt::BroadcastOp, tt::ReduceOp>(def)) {
+        // } else if (auto bc = dyn_cast<tt::BroadcastOp>(def)) {
+        //     expandDefChain(bc.getSrc(), chainedVals);
+      } else if (isa<tt::SplatOp, tt::BroadcastOp, tt::ReduceOp,
+                     tt::ExpandDimsOp>(def)) {
         ;
       } else {
         assert(0 && "add more support");

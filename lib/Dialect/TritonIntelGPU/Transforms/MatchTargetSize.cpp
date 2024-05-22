@@ -104,11 +104,13 @@ public:
         transformDotOp(dot);
       else if (auto ptrOp = dyn_cast<tt::MakeTensorPtrOp>(op)) {
         // Attribute attr = getEncoding(op->getResultTypes()[0]);
-        // if (ptrOp.getOrder()[0] == 0 && isa<ttg::DotOperandEncodingAttr>(attr))
+        // if (ptrOp.getOrder()[0] == 0 &&
+        // isa<ttg::DotOperandEncodingAttr>(attr))
         //   transposedAttrs.insert(attr);
         recordRootSubSize(op->getResultTypes()[0]);
         transformMakeTensorPtrOp(ptrOp);
-      }
+      } else if (auto bc = dyn_cast<tt::BroadcastOp>(op))
+        transformBroadcastOp(bc);
       // arith,math,tt.advance,tt.load,tt.store,tt.prefetch
       // tt.splat, tt.broadcast
       else
@@ -229,46 +231,100 @@ private:
     auto outer = dims == 2 ? srcTy.getShape()[0] : 1;
     auto combine = op.getCombineOp().front().getOperations().begin();
     auto id = combine->getName().getIdentifier();
-    // FIXME: 16 is the supported IR reduce length
-    SmallVector<Value> subVals;
-    for (auto j = 0; j < srcTy.getShape()[axis]; j += 16) {
-      auto subVal = getSubVal(op, src, {0, j}, {outer, 16});
-      subVals.push_back(subVal);
+    bool debug = mlir::triton::tools::getBoolEnv("MY_DEBUG");
+    if (debug) {
+      SmallVector<Value> subVals;
+      for (auto j = 0; j < srcTy.getShape()[axis]; j += 16) {
+        auto subVal = getSubVal(op, src, {0, j}, {outer, 16});
+        subVals.push_back(subVal);
+      }
+      // subType.shape[0] == outer
+      auto subType = RankedTensorType::get({outer, 16}, srcTy.getElementType());
+      Value acc;
+      switch (subVals.size()) {
+      case 1:
+        acc = subVals[0];
+        break;
+      case 2: {
+        auto acc01 = b.create(loc, id, {subVals[0], subVals[1]}, subType);
+        acc = acc01->getResult(0);
+        break;
+      }
+      case 4: {
+        auto acc01 = b.create(loc, id, {subVals[0], subVals[1]}, subType);
+        auto acc23 = b.create(loc, id, {subVals[2], subVals[3]}, subType);
+        auto accOp = b.create(
+            loc, id, {acc01->getResult(0), acc23->getResult(0)}, subType);
+        acc = accOp->getResult(0);
+        break;
+      }
+      default:
+        assert(false && "unsupported reduce size");
+      }
+      SmallVector<Value> subOps;
+      for (auto i = 0; i < outer; i++) {
+        auto subType = RankedTensorType::get(16, srcTy.getElementType());
+        Value subAcc = b.create<ttgi::ExtractOp>(loc, subType, acc, i);
+        auto subRed = b.create<tt::ReduceOp>(loc, subAcc, 0);
+        auto &subRegion = subRed.getCombineOp();
+        b.cloneRegionBefore(op.getCombineOp(), subRegion, subRegion.end());
+        subOps.push_back(subRed.getResult()[0]);
+      }
+      auto glue = b.create<ttgi::GlueOp>(loc, op.getResultTypes()[0], subOps);
+      op->replaceAllUsesWith(glue->getResults());
+    } else {
+      // FIXME: 16 is the supported IR reduce length
+      SmallVector<Value> glueVals;
+      // fixed 8 for now
+      unsigned step = 8;
+      for (unsigned i = 0; i < outer; i += step) {
+        SmallVector<Value> subVals;
+        for (unsigned j = 0; j < srcTy.getShape()[axis]; j += 16) {
+          Value subVal = getSubVal(op, src, {i, j}, {step, 16});
+          subVals.push_back(subVal);
+        }
+        auto subType =
+            RankedTensorType::get({step, 16}, srcTy.getElementType());
+        auto combine = op.getCombineOp().front().getOperations().begin();
+        StringAttr id = combine->getName().getIdentifier();
+        Value acc;
+        switch (subVals.size()) {
+        case 1:
+          acc = subVals[0];
+          break;
+        case 2: {
+          auto acc01 = b.create(loc, id, {subVals[0], subVals[1]}, subType);
+          acc = acc01->getResult(0);
+          break;
+        }
+        case 4: {
+          auto acc01 = b.create(loc, id, {subVals[0], subVals[1]}, subType);
+          auto acc23 = b.create(loc, id, {subVals[2], subVals[3]}, subType);
+          auto accOp = b.create(
+              loc, id, {acc01->getResult(0), acc23->getResult(0)}, subType);
+          acc = accOp->getResult(0);
+          break;
+        }
+        default:
+          assert(false && "add more reduce size support");
+        }
+        SmallVector<Value> subOps;
+        for (unsigned j = 0; j < step; j++) {
+          auto subType = RankedTensorType::get(16, srcTy.getElementType());
+          Value subAcc = b.create<ttgi::ExtractOp>(loc, subType, acc, j);
+          auto subRed = b.create<tt::ReduceOp>(loc, subAcc, 0);
+          auto &subRegion = subRed.getCombineOp();
+          b.cloneRegionBefore(op.getCombineOp(), subRegion, subRegion.end());
+          subOps.push_back(subRed.getResult()[0]);
+        }
+        // auto glue = b.create<ttgi::GlueOp>(loc, op.getResultTypes()[0],
+        // subOps);
+        glueVals.append(subOps);
+      }
+      auto glue = b.create<ttgi::GlueOp>(loc, op.getResultTypes()[0], glueVals);
+      op->replaceAllUsesWith(glue->getResults());
     }
-    // subType.shape[0] == outer
-    auto subType = RankedTensorType::get({outer, 16}, srcTy.getElementType());
-    Value acc;
-    switch (subVals.size()) {
-    case 1:
-      acc = subVals[0];
-      break;
-    case 2: {
-      auto acc01 = b.create(loc, id, {subVals[0], subVals[1]}, subType);
-      acc = acc01->getResult(0);
-      break;
-    }
-    case 4: {
-      auto acc01 = b.create(loc, id, {subVals[0], subVals[1]}, subType);
-      auto acc23 = b.create(loc, id, {subVals[2], subVals[3]}, subType);
-      auto accOp = b.create(loc, id, {acc01->getResult(0), acc23->getResult(0)},
-                            subType);
-      acc = accOp->getResult(0);
-      break;
-    }
-    default:
-      assert(false && "unsupported reduce size");
-    }
-    SmallVector<Value> subOps;
-    for (auto i = 0; i < outer; i++) {
-      auto subType = RankedTensorType::get(16, srcTy.getElementType());
-      Value subAcc = b.create<ttgi::ExtractOp>(loc, subType, acc, i);
-      auto subRed = b.create<tt::ReduceOp>(loc, subAcc, 0);
-      auto &subRegion = subRed.getCombineOp();
-      b.cloneRegionBefore(op.getCombineOp(), subRegion, subRegion.end());
-      subOps.push_back(subRed.getResult()[0]);
-    }
-    auto glue = b.create<ttgi::GlueOp>(loc, op.getResultTypes()[0], subOps);
-    op->replaceAllUsesWith(glue->getResults());
+    // op->replaceAllUsesWith(glue->getResults());
     op->erase();
     return;
   }
@@ -342,6 +398,38 @@ private:
     auto glue = b.create<ttgi::GlueOp>(loc, type, subOps);
     op->replaceAllUsesWith(glue->getResults());
     op->erase();
+    return;
+  }
+
+  void transformBroadcastOp(tt::BroadcastOp op) {
+    OpBuilder b(op);
+    auto loc = op->getLoc();
+    RankedTensorType resType = op.getResult().getType();
+    auto [shape, subType, subSize] = getSubTypeAndShape(resType);
+    auto tType = cast<RankedTensorType>(subType);
+    RankedTensorType srcType = op.getSrc().getType();
+    unsigned srcDim0 = srcType.getShape()[0];
+    unsigned dstDim0 = tType.getShape()[0];
+    if (srcDim0 == dstDim0) {
+      Value newOp = b.create<tt::BroadcastOp>(loc, tType, op.getSrc());
+      unsigned num = resType.getShape()[1] / tType.getShape()[1];
+      SmallVector<Value> ops(num, newOp);
+      auto glue = b.create<ttgi::GlueOp>(loc, resType, ops);
+      op->replaceAllUsesWith(glue->getResults());
+      op->erase();
+    } else {
+      assert(srcDim0 == 2 * dstDim0);
+      auto newTy = RankedTensorType::get({srcDim0, tType.getShape()[1]},
+                                         tType.getElementType());
+      auto newOp = b.create<tt::BroadcastOp>(loc, newTy, op.getSrc());
+      auto extract0 = b.create<ttgi::ExtractOp>(loc, tType, newOp, 0);
+      auto extract1 = b.create<ttgi::ExtractOp>(loc, tType, newOp, 1);
+      SmallVector<Value> ops{extract0, extract1, extract0, extract1,
+                             extract0, extract1, extract0, extract1};
+      auto glue = b.create<ttgi::GlueOp>(loc, resType, ops);
+      op->replaceAllUsesWith(glue->getResults());
+      op->erase();
+    }
     return;
   }
 
