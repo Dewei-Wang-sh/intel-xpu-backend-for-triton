@@ -3,6 +3,7 @@ add_triton_library(TritonIntelGPUTransforms
   MatchTargetSize.cpp
   PrefetchBlock.cpp
   PrepareGenxLsc.cpp
+  ScheduleLoad.cpp
   Utility.cpp
 
   DEPENDS

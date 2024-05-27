@@ -95,4 +95,17 @@ def TritonIntelGPUPrepareGenxLsc : Pass<"tritonintelgpu-prepare-genxlsc", "mlir:
                            "mlir::arith::ArithDialect"];
 }
 
+def TritonIntelGPUScheduleLoad : Pass<"tritonintelgpu-schedule-load", "mlir::ModuleOp"> {
+  let summary = "naive ra-aware instr scheduler";
+
+  let description = [{
+  }];
+
+  let constructor = "mlir::triton::gpu::intel::createScheduleLoadPass()";
+
+  let dependentDialects = ["mlir::triton::TritonDialect",
+                           "mlir::triton::gpu::intel::TritonIntelGPUDialect",
+                           "mlir::triton::gpu::TritonGPUDialect"];
+}
+
 #endif // TRITON_INTEL_GPU_PASSES

@@ -512,8 +512,8 @@ class ArithDivFOpLowering
     auto srcType = dyn_cast<ShapedType>(op.getType());
     Type dstType = getTypeConverter()->convertType(srcType);
     auto vecType = cast<VectorType>(dstType);
-    auto val = APFloat(1.0);
-    auto dstAttr = DenseElementsAttr::get(vecType, val);
+    auto attr = rewriter.getFloatAttr(vecType.getElementType(), 1.0);
+    auto dstAttr = DenseElementsAttr::get(vecType, attr.getValue());
     auto one = rewriter.create<LLVM::ConstantOp>(loc, dstType, dstAttr);
     auto rcp =
         rewriter.create<LLVM::FDivOp>(loc, dstType, one, adaptor.getRhs());

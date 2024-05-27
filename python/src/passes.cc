@@ -57,6 +57,7 @@ void init_triton_passes_ttgpuir(py::module &&m) {
   ADD_PASS_WRAPPER_0("add_distribute_to_warps",
                      createTritonGPUDistributeToWarpsPass);
   ADD_PASS_WRAPPER_0("add_match_target_size", createMatchTargetSizePass);
+  ADD_PASS_WRAPPER_0("add_schedule_load", createScheduleLoadPass);
   ADD_PASS_WRAPPER_0("add_prepare_genxlsc", createPrepareGenxLscPass);
   ADD_PASS_WRAPPER_1("add_accelerate_matmul", createAccelerateMatmulPass, int);
   ADD_PASS_WRAPPER_0("add_reorder_instructions", createReorderInstructionsPass);

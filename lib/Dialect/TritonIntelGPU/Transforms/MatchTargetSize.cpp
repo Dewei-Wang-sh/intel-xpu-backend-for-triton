@@ -163,6 +163,10 @@ private:
       colLimit = 32;
       if (dotAttr.getKWidth() != 0 && dotAttr.getOpIdx() == 1)
         return {kStep, nStep};
+      // hack for attn
+      bool debug = mlir::triton::tools::getBoolEnv("MY_DEBUG");
+      if (dotAttr.getOpIdx() == 1)
+        colLimit = debug ? 16 : 32;
     }
     auto shape = type.getShape();
     SmallVector<int64_t> subSize(shape.size());
@@ -171,7 +175,7 @@ private:
       subSize[1] = (shape[1] > colLimit) ? colLimit : shape[1];
       // all load/store size max is 512 Byte
       auto max = 512 * 4 / sizeInByte / subSize[1];
-      subSize[0] = std::min(max, shape[0]);
+      subSize[0] = std::min(32L, shape[0]);
     } else if (shape.size() == 1) {
       int64_t max = 512 * 4 / sizeInByte;
       subSize[0] = std::min(max, shape[0]);
@@ -231,48 +235,47 @@ private:
     auto outer = dims == 2 ? srcTy.getShape()[0] : 1;
     auto combine = op.getCombineOp().front().getOperations().begin();
     auto id = combine->getName().getIdentifier();
-    bool debug = mlir::triton::tools::getBoolEnv("MY_DEBUG");
-    if (debug) {
-      SmallVector<Value> subVals;
-      for (auto j = 0; j < srcTy.getShape()[axis]; j += 16) {
-        auto subVal = getSubVal(op, src, {0, j}, {outer, 16});
-        subVals.push_back(subVal);
-      }
-      // subType.shape[0] == outer
-      auto subType = RankedTensorType::get({outer, 16}, srcTy.getElementType());
-      Value acc;
-      switch (subVals.size()) {
-      case 1:
-        acc = subVals[0];
-        break;
-      case 2: {
-        auto acc01 = b.create(loc, id, {subVals[0], subVals[1]}, subType);
-        acc = acc01->getResult(0);
-        break;
-      }
-      case 4: {
-        auto acc01 = b.create(loc, id, {subVals[0], subVals[1]}, subType);
-        auto acc23 = b.create(loc, id, {subVals[2], subVals[3]}, subType);
-        auto accOp = b.create(
-            loc, id, {acc01->getResult(0), acc23->getResult(0)}, subType);
-        acc = accOp->getResult(0);
-        break;
-      }
-      default:
-        assert(false && "unsupported reduce size");
-      }
-      SmallVector<Value> subOps;
-      for (auto i = 0; i < outer; i++) {
-        auto subType = RankedTensorType::get(16, srcTy.getElementType());
-        Value subAcc = b.create<ttgi::ExtractOp>(loc, subType, acc, i);
-        auto subRed = b.create<tt::ReduceOp>(loc, subAcc, 0);
-        auto &subRegion = subRed.getCombineOp();
-        b.cloneRegionBefore(op.getCombineOp(), subRegion, subRegion.end());
-        subOps.push_back(subRed.getResult()[0]);
-      }
-      auto glue = b.create<ttgi::GlueOp>(loc, op.getResultTypes()[0], subOps);
-      op->replaceAllUsesWith(glue->getResults());
-    } else {
+    // bool debug = mlir::triton::tools::getBoolEnv("MY_DEBUG");
+    // if (debug) {
+    //   SmallVector<Value> subVals;
+    //   for (auto j = 0; j < srcTy.getShape()[axis]; j += 16) {
+    //     auto subVal = getSubVal(op, src, {0, j}, {outer, 16});
+    //     subVals.push_back(subVal);
+    //   }
+    //   // subType.shape[0] == outer
+    //   auto subType = RankedTensorType::get({outer, 16},
+    //   srcTy.getElementType()); Value acc; switch (subVals.size()) { case 1:
+    //     acc = subVals[0];
+    //     break;
+    //   case 2: {
+    //     auto acc01 = b.create(loc, id, {subVals[0], subVals[1]}, subType);
+    //     acc = acc01->getResult(0);
+    //     break;
+    //   }
+    //   case 4: {
+    //     auto acc01 = b.create(loc, id, {subVals[0], subVals[1]}, subType);
+    //     auto acc23 = b.create(loc, id, {subVals[2], subVals[3]}, subType);
+    //     auto accOp = b.create(
+    //         loc, id, {acc01->getResult(0), acc23->getResult(0)}, subType);
+    //     acc = accOp->getResult(0);
+    //     break;
+    //   }
+    //   default:
+    //     assert(false && "unsupported reduce size");
+    //   }
+    //   SmallVector<Value> subOps;
+    //   for (auto i = 0; i < outer; i++) {
+    //     auto subType = RankedTensorType::get(16, srcTy.getElementType());
+    //     Value subAcc = b.create<ttgi::ExtractOp>(loc, subType, acc, i);
+    //     auto subRed = b.create<tt::ReduceOp>(loc, subAcc, 0);
+    //     auto &subRegion = subRed.getCombineOp();
+    //     b.cloneRegionBefore(op.getCombineOp(), subRegion, subRegion.end());
+    //     subOps.push_back(subRed.getResult()[0]);
+    //   }
+    //   auto glue = b.create<ttgi::GlueOp>(loc, op.getResultTypes()[0],
+    //   subOps); op->replaceAllUsesWith(glue->getResults());
+    // } else
+    {
       // FIXME: 16 is the supported IR reduce length
       SmallVector<Value> glueVals;
       // fixed 8 for now
@@ -543,6 +546,9 @@ private:
           subDotC = b.create<tt::DotOp>(loc, subDotA, subDotB, subDotC,
                                         dot.getAllowTF32Attr(),
                                         dot.getMaxNumImpreciseAccAttr());
+          // hack for attention
+          subDotC.getDefiningOp()->setAttr(
+              "schedule-group", b.getIntegerAttr(b.getI32Type(), nn / nStep));
         }
         subCs.push_back(subDotC);
       }
