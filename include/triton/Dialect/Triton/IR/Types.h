@@ -22,9 +22,11 @@ unsigned getPointeeBitWidth(Type type);
 
 Type getPointeeType(Type type);
 
-Type getPointerType(Type type);
+Type getPointerType(Type type, unsigned as);
 
 Type getElementTypeOfTensorPointerType(Type type);
+
+unsigned getAddrspace(Type type);
 
 Type getI1SameShape(Type type);
 

@@ -519,8 +519,8 @@ class ArithDivFOpLowering
         loc, dstType, one, adaptor.getRhs(),
         LLVM::FastmathFlagsAttr::get(rewriter.getContext(),
                                      LLVM::FastmathFlags::fast));
-    auto res =
-        rewriter.create<LLVM::FMulOp>(loc, dstType, adaptor.getLhs(), rcp,
+    auto res = rewriter.create<LLVM::FMulOp>(
+        loc, dstType, adaptor.getLhs(), rcp,
         LLVM::FastmathFlagsAttr::get(rewriter.getContext(),
                                      LLVM::FastmathFlags::fast));
     rewriter.replaceOp(op, res);

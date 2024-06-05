@@ -141,7 +141,9 @@ Type getPointerTypeSameShape(Type type) {
   }
 }
 
-Type getPointerType(Type type) { return PointerType::get(type, 1); }
+Type getPointerType(Type type, unsigned as) {
+  return PointerType::get(type, as);
+}
 
 bool isTensorPointerType(Type type) {
   if (auto ptrType = type.dyn_cast<PointerType>())
@@ -158,6 +160,11 @@ Type getElementTypeOfTensorPointerType(Type type) {
     if (auto tensorTy = ptrType.getPointeeType().dyn_cast<RankedTensorType>())
       return tensorTy.getElementType();
   return {};
+}
+unsigned getAddrspace(Type type) {
+  if (auto ptrType = type.dyn_cast<PointerType>())
+    return ptrType.getAddressSpace();
+  return 1;
 }
 
 } // namespace triton
