@@ -136,6 +136,7 @@ class XPUBackend(BaseBackend):
             # passes.ttgpuir.add_prepare_genxlsc(pm)
             passes.common.add_cse(pm)
             passes.common.add_canonicalizer(pm)
+            passes.ttgpuir.add_schedule_load(pm)
             passes.common.add_symbol_dce(pm)
             pm.run(mod)
             metadata["cluster_dims"] = (cluster_info.clusterDimX, cluster_info.clusterDimY, cluster_info.clusterDimZ)
@@ -196,7 +197,7 @@ class XPUBackend(BaseBackend):
         if os.environ.get("FROM_MLIR", ""):
             print("from mlir", flush=True)
             mod = ir.parse_mlir_module(
-                "/home/gta/deweiwang/xpu2/intel-xpu-backend-for-triton/python/tutorials/input.attn.0522.mlir", mod.context)
+                "/home/gta/deweiwang/xpu2/intel-xpu-backend-for-triton/python/tutorials/tmp2.mlir", mod.context)
         # LLVM-IR (MLIR) -> LLVM-IR (LLVM)
         llvm.init_targets()
         context = llvm.context()
@@ -211,7 +212,7 @@ class XPUBackend(BaseBackend):
         if os.environ.get("FROM_LLVM", ""):
             print("from llvm", flush=True)
             llvm_mod = llvm.parse_ir_file(
-                "/home/gta/deweiwang/xpu2/intel-xpu-backend-for-triton/python/tutorials/input.attn.ll", context)
+                "/home/gta/deweiwang/xpu2/intel-xpu-backend-for-triton/python/tutorials/input.attn.0528.ll", context)
         print("second llvm module")
         print(llvm_mod)
         # Get some metadata

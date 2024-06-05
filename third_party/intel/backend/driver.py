@@ -296,6 +296,10 @@ def make_launcher(constants, signature, ids):
     float H = 48;
     float N_CTX = 1024;
     float D_HEAD = 64;
+    //float Z = 32;
+    //float H = 32;
+    //float N_CTX = 512;
+    //float D_HEAD = 64;
     float throughput = 2 * 2 * Z * H * N_CTX * N_CTX * D_HEAD * (1e-12)/(gap * 1e-3);
     std::cout << "Triton Peak TFlops " << throughput << std::endl;
 
