@@ -117,6 +117,15 @@ public:
         }
       }
     });
+
+    // HOHO, add fastmath for all
+    m.walk([&](Operation *op) {
+      auto fmIf = dyn_cast<arith::ArithFastMathInterface>(op);
+      if (fmIf)
+        op->setAttr(
+            fmIf.getFastMathAttrName(),
+            arith::FastMathFlagsAttr::get(ctx, arith::FastMathFlags::fast));
+    });
   }
 
 private:
