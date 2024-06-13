@@ -46,6 +46,7 @@
 #include "intel/include/Dialect/TritonIntelGPU/Transforms/Passes.h"
 
 #include "triton/Dialect/Triton/IR/Dialect.h"
+#include "triton/Tools/Sys/GetEnv.hpp"
 
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/Debug.h"
@@ -365,7 +366,8 @@ void PrefetchBlockPass::injectPrefetchOpsInPreheader(
   }
 
   // FIXME: try to use a named barrier to increase performance.
-  if (injectSplitBarriers) {
+  if (injectSplitBarriers ||
+      mlir::triton::tools::getBoolEnv("ENABLE_BARRIER")) {
     Location loc = loop.getLoc();
     b.setInsertionPoint(loop);
     b.create<tt::TritonGEN::SplitBarrierSignalOp>(
@@ -418,7 +420,8 @@ void PrefetchBlockPass::injectPrefetchOpsInBody(
   }
 
   // FIXME: try to use a named barrier to increase performance.
-  if (injectSplitBarriers) {
+  if (injectSplitBarriers ||
+      mlir::triton::tools::getBoolEnv("ENABLE_BARRIER")) {
     Location loc = loop.getLoc();
     b.setInsertionPoint(yield);
     b.create<tt::TritonGEN::SplitBarrierWaitOp>(

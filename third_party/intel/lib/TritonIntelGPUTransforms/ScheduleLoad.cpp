@@ -24,6 +24,7 @@
 #include "intel/include/Dialect/TritonIntelGPU/Transforms/Passes.h"
 
 #include "triton/Dialect/Triton/IR/Dialect.h"
+#include "triton/Tools/Sys/GetEnv.hpp"
 
 namespace mlir::triton::gpu::intel {
 #define GEN_PASS_DEF_TRITONINTELGPUSCHEDULELOAD
@@ -112,11 +113,11 @@ public:
       Operation *start = &loop.getBody()->front();
       for (auto dots : dotsGroup) {
         auto notVisited = getNotVisitedUses(dots);
-        if (i == 0)
+        if (i == 0 && mlir::triton::tools::getBoolEnv("ENABLE_SCHED"))
           notVisited.append(getNotVisitedUsesA(dots));
         for (auto val : notVisited) {
           auto op = val.getDefiningOp();
-          if (i == 0)
+          if (i == 0 && mlir::triton::tools::getBoolEnv("ENABLE_SCHED"))
             op->moveBefore(start);
           else
             op->moveBefore(dots.begin()->getOperation());

@@ -424,8 +424,9 @@ createBlock2DReadWithAddressPayloadUpdate(TritonGEN::Matrix2DBlockLoadOp op,
               std::to_string(op.getTileWidth()) + "v" +
               std::to_string(op.getVBlocks());
     Value zero = i32_val(0);
+    Value four = i32_val(4);
     SmallVector<Type> argTypes{ptr.getType(), i32_ty, i32_ty, i32_ty};
-    SmallVector<Value> args{ptr, zero, zero, zero};
+    SmallVector<Value> args{ptr, zero, zero, four};
 
     // Function and parameters attributes.
     intel::AttrBuilder funcAttrBuilder(*ctx);
