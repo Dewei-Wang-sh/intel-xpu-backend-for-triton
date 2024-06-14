@@ -158,12 +158,6 @@ def forward(q, k, v, causal, sm_scale):
     causal = False
     stage = 3 if causal else 1
     grid = (q.shape[0],  q.shape[1],triton.cdiv(q.shape[2], BLOCK_M))
-    print("Q stride =", q.stride(0), q.stride(1), q.stride(2), q.stride(3))
-    print("K stride =", k.stride(0), k.stride(1), k.stride(2), k.stride(3))
-    print("V stride =", v.stride(0), v.stride(1), v.stride(2), v.stride(3))
-    print(q.shape[0], q.shape[1])
-    print("causal = ", causal)
-    print(stage)
     M = torch.empty((q.shape[0], q.shape[1], q.shape[2]), device=q.device, dtype=torch.float32)
     _attn_fwd[grid](
         q, k, v, sm_scale, M, o,  #
@@ -182,29 +176,29 @@ def forward(q, k, v, causal, sm_scale):
     )
     return o
 
-# torch.manual_seed(0)
-# Z = 1
-# H = 2
-# N_CTX = 1024
-# D_HEAD = 64
-# causal = False
-# dtype=torch.float16
-# q = torch.randn((Z, H, N_CTX, D_HEAD), device='xpu', dtype=dtype)
-# k = torch.randn((Z, H, N_CTX, D_HEAD), device='xpu', dtype=dtype)
-# v = torch.randn((Z, H, N_CTX, D_HEAD), device='xpu', dtype=dtype)
-# sm_scale = 0.125
-# dout = torch.randn_like(q)
-# #torch_output = torch.nn.functional.scaled_dot_product_attention(q, k, v, attn_mask=None, dropout_p=0.0, is_causal=False)
-# #torch.save(torch_output, "./torch_output.pt")
-# torch_output = torch.load("./torch_output.pt")
-# triton_output = forward(q, k, v, causal, sm_scale)
-
-# torch_outputf32 = torch_output.to(torch.float32)
-# if torch.allclose(triton_output, torch_outputf32, atol=1e-3, rtol=1e-3):
-#     print("✅ Triton and Torch match")
-# else:
-#     print("❌ Triton and Torch differ")
-
+#torch.manual_seed(0)
+#Z = 4
+#H = 48
+#N_CTX = 1024
+#D_HEAD = 64
+#causal = False
+#dtype=torch.float16
+#q = torch.randn((Z, H, N_CTX, D_HEAD), device='xpu', dtype=dtype)
+#k = torch.randn((Z, H, N_CTX, D_HEAD), device='xpu', dtype=dtype)
+#v = torch.randn((Z, H, N_CTX, D_HEAD), device='xpu', dtype=dtype)
+#sm_scale = 0.125
+#dout = torch.randn_like(q)
+##torch_output = torch.nn.functional.scaled_dot_product_attention(q, k, v, attn_mask=None, dropout_p=0.0, is_causal=False)
+##torch.save(torch_output, "./torch_output.pt")
+#torch_output = torch.load("./torch_output_4x48x1024x64.pt")
+#triton_output = forward(q, k, v, causal, sm_scale)
+#
+#torch_outputf32 = torch_output.to(torch.float32)
+#if torch.allclose(triton_output, torch_outputf32, atol=1e-3, rtol=1e-3):
+#    print("✅ Triton and Torch match")
+#else:
+#    print("❌ Triton and Torch differ")
+#
 
 
 @triton.testing.perf_report(
