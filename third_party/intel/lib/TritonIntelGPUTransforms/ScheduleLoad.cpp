@@ -90,46 +90,44 @@ public:
     auto *ctx = &getContext();
     ModuleOp m = getOperation();
     bool enableSLM = mlir::triton::tools::getBoolEnv("ENABLE_SLM");
-    if (!enableSLM) {
-      m.walk<WalkOrder::PreOrder>([&](scf::ForOp loop) {
-        visited.clear();
-        unsigned group = -1;
-        SmallVector<SmallVector<tt::DotOp>> dotsGroup;
-        SmallVector<tt::DotOp> dots;
-        for (auto dot : loop.getOps<tt::DotOp>()) {
-          auto groupAttr = dot->getAttrOfType<IntegerAttr>("schedule-group");
-          unsigned currGroup = groupAttr.getInt();
-          if (currGroup != group && !dots.empty()) {
-            dotsGroup.push_back(dots);
-            dots.clear();
-          }
-          if (currGroup == 0)
-            getNotVisitedUses({dot});
-          dots.push_back(dot);
-          group = currGroup;
+    m.walk<WalkOrder::PreOrder>([&](scf::ForOp loop) {
+      visited.clear();
+      unsigned group = -1;
+      SmallVector<SmallVector<tt::DotOp>> dotsGroup;
+      SmallVector<tt::DotOp> dots;
+      for (auto dot : loop.getOps<tt::DotOp>()) {
+        auto groupAttr = dot->getAttrOfType<IntegerAttr>("schedule-group");
+        unsigned currGroup = groupAttr.getInt();
+        if (currGroup != group && !dots.empty()) {
+          dotsGroup.push_back(dots);
+          dots.clear();
         }
-        assert(!dots.empty());
-        dotsGroup.push_back(dots);
+        if (currGroup == 0)
+          getNotVisitedUses({dot});
+        dots.push_back(dot);
+        group = currGroup;
+      }
+      assert(!dots.empty());
+      dotsGroup.push_back(dots);
 
-        unsigned i = 0;
-        Operation *start = &loop.getBody()->front();
-        for (auto dots : dotsGroup) {
-          auto notVisited = getNotVisitedUses(dots);
-          if (i == 0)
-            notVisited.append(getNotVisitedUsesA(dots));
-          for (auto val : notVisited) {
-            auto op = val.getDefiningOp();
-            if (i == 0)
-              op->moveBefore(start);
-            else
-              op->moveBefore(dots.begin()->getOperation());
-          }
-          i++;
-          if (i == 4)
-            i = 0;
+      unsigned i = 0;
+      Operation *start = &loop.getBody()->front();
+      for (auto dots : dotsGroup) {
+        auto notVisited = getNotVisitedUses(dots);
+        if (i == 0 && !enableSLM)
+          notVisited.append(getNotVisitedUsesA(dots));
+        for (auto val : notVisited) {
+          auto op = val.getDefiningOp();
+          if (i == 0 && !enableSLM)
+            op->moveBefore(start);
+          else
+            op->moveBefore(dots.begin()->getOperation());
         }
-      });
-    }
+        i++;
+        if (i == 4)
+          i = 0;
+      }
+    });
 
     //
     m.walk([&](arith::TruncFOp op) {
