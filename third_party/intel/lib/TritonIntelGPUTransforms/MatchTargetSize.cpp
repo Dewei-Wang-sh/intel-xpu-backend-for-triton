@@ -670,8 +670,8 @@ MatchTargetSizePass::getSubTypeAndShape(Type type, bool hack) const {
     SmallVector<int64_t> subSize = sizePerAttrMap.at(layout);
     // hack for attn
     if (hack) {
-      subSize[0] = 8;
-      subSize[1] = 16;
+      subSize[0] = 16;
+      subSize[1] = 64;
     }
 
     auto subType = RankedTensorType::get(
