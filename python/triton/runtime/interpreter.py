@@ -355,6 +355,9 @@ class InterpreterBuilder:
             raise ValueError("grid_idx is None")
         return TensorHandle(np.array([self.grid_idx[axis]], dtype=np.int32), tl.int32)
 
+    def create_get_warp_id(self):
+        pass
+
     def create_get_num_programs(self, axis):
         return TensorHandle(np.array([self.grid_dim[axis]], dtype=np.int32), tl.int32)
 

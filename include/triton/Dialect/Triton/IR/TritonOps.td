@@ -70,9 +70,9 @@ def TT_PtrToIntOp : TT_Op<"ptr_to_int", [Elementwise,
 }
 
 // arith.bitcast doesn't support pointers
-def TT_BitcastOp : TT_Op<"bitcast", [Elementwise,
-                                     SameOperandsAndResultShape,
-                                     SameOperandsAndResultEncoding,
+def TT_BitcastOp : TT_Op<"bitcast", [//Elementwise,
+                                    //  SameOperandsAndResultShape,
+                                    //  SameOperandsAndResultEncoding,
                                      Pure,
                                      /*DeclareOpInterfaceMethods<CastOpInterface>*/]> {
     let summary = "Cast between types of the same bitwidth";
@@ -1146,6 +1146,38 @@ def TT_ExperimentalDescriptorStoreOp : TT_Op<"experimental_descriptor_store", [
       $desc_ptr `[` $indices `]` `,` $src
       attr-dict `:` qualified(type($desc_ptr)) `,` type($src)
     }];
+}
+
+// def TT_GetWarpIdOp : TT_Op<"get_warp_id", [Pure]> {
+//     let arguments = (ins );
+
+//     let results = (outs I32:$result);
+
+//     let assemblyFormat = "attr-dict `:` type($result)";
+// }
+
+def TT_AllocOp : TT_Op<"alloc", [MemoryEffects<[MemAlloc]>]> {
+  let summary = "Memory allocation operation default in SLM";
+  let description = [{
+    The `alloc` operation allocates a region of memory as specified by its type.
+    Example:
+      ```mlir
+      %0 = tt.alloc() : <8x64xf32, 3>
+      ```
+  }];
+  let results = (outs TT_Ptr:$result);
+  let assemblyFormat = [{
+    attr-dict `:` type($result)
+  }];
+}
+
+def TT_AllReduceOp: TT_Op<"all_reduce",
+                       [Pure, // MemWrite, MemRead,
+                        SameOperandsAndResultType]> {
+    let summary = "reduce src among workgroup";
+    let arguments = (ins AnyTypeOf<[TT_FloatLike, TT_IntLike]>:$src, TT_AtomicRMWAttr:$combine);
+    let results =  (outs AnyTypeOf<[TT_FloatLike, TT_IntLike]>:$result);
+    let assemblyFormat = "$src $combine attr-dict `:` type($src)";
 }
 
 #endif // Triton_OPS

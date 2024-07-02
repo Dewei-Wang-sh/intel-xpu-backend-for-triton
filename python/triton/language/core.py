@@ -396,7 +396,7 @@ class pointer_type(dtype):
         self.name = f'pointer<{element_ty}>'
 
     def to_ir(self, builder: ir.builder) -> ir.pointer_type:
-        return builder.get_ptr_ty(self.element_ty.to_ir(builder), 1)
+        return builder.get_ptr_ty(self.element_ty.to_ir(builder), self.address_space)
 
     def __str__(self):
         return self.name
@@ -1072,7 +1072,7 @@ class tensor:
     def abs(self) -> tensor:
         ...
 
-    def reduce(self, axis, combine_fn, keep_dims=False) -> tensor:
+    def reduce(self, axis, combine_fn, keep_dims=False, combine_op : str = None, cross_warp=False) -> tensor:
         ...
 
     def associative_scan(self, axis, combine_fn, reverse=False) -> tensor:
@@ -1093,7 +1093,7 @@ class tensor:
     def ravel(self) -> tensor:
         ...
 
-    def max(self, axis=None, return_indices=False, return_indices_tie_break_left=True, keep_dims=False) -> tensor:
+    def max(self, axis=None, return_indices=False, return_indices_tie_break_left=True, keep_dims=False, cross_warp=False) -> tensor:
         ...
 
     def argmax(self, axis, tie_break_left=True, keep_dims=False) -> tensor:
@@ -1105,7 +1105,7 @@ class tensor:
     def argmin(self, axis, tie_break_left=True, keep_dims=False) -> tensor:
         ...
 
-    def sum(self, axis=None, keep_dims=False) -> tensor:
+    def sum(self, axis=None, keep_dims=False, cross_warp=False) -> tensor:
         ...
 
     def xor_sum(self, axis=None, keep_dims=False) -> tensor:
@@ -1156,6 +1156,12 @@ def program_id(axis, _builder=None):
     axis = _constexpr_to_value(axis)
     return semantic.program_id(axis, _builder)
 
+@builtin
+def warp_id(_builder=None):
+    """
+    Returns the linear warp id in the current workgroup.
+    """
+    return semantic.warp_id(_builder)
 
 @builtin
 def num_programs(axis, _builder=None):
@@ -1696,6 +1702,26 @@ def advance(base, offsets, _builder=None):
     """
     return semantic.advance(base, offsets, _builder)
 
+# @builtin
+# def alloc(dtype, _builder=None):
+#     """
+#     Returns a pointer to a block in shared local memory
+
+#     :param dtype: The order of the original data format
+#     """
+#     return semantic.alloc(dtype, _builder)
+
+@builtin
+def alloc(shape, dtype, _builder=None):
+    """
+    Returns a pointer to a block in shared local memory
+
+    :param shape: The shape of the slm
+    :param dtype: The order of the original data format
+    """
+    type = block_type(dtype, shape)
+    # type = _constexpr_to_value(dtype)
+    return semantic.alloc(type, _builder)
 
 # -----------------------
 # Atomic Memory Operations
@@ -1970,17 +1996,21 @@ def _insertion_guard(builder):
 
 @_tensor_member_fn
 @builtin
-def reduce(input, axis, combine_fn, keep_dims=False, _builder=None, _generator=None):
+def reduce(input, axis, combine_fn, keep_dims=False, combine_op: str = None, cross_warp=False, _builder=None, _generator=None):
     """Applies the combine_fn to all elements in :code:`input` tensors along the provided :code:`axis`
 
     :param input: the input tensor, or tuple of tensors
     :param axis: the dimension along which the reduction should be done. If None, reduce all dimensions
     :param combine_fn: a function to combine two groups of scalar tensors (must be marked with @triton.jit)
     :param keep_dims: if true, keep the reduced dimensions with length 1
+    :param scope: set reduction scope: warp/workgroup
 
     """
+    if isinstance(input, tensor) and cross_warp:
+        combine = _constexpr_to_value(combine_op)
+        return semantic.all_reduction(input, combine, _builder)
     if isinstance(input, tensor):
-        return reduce((input, ), axis, combine_fn, keep_dims=keep_dims, _builder=_builder, _generator=_generator)[0]
+        return reduce((input, ), axis, combine_fn, keep_dims=keep_dims, combine_op=combine_op, _builder=_builder, _generator=_generator)[0]
 
     def make_combine_region(reduce_op):
         in_scalar_tys = [t.type.scalar for t in input]
@@ -2124,6 +2154,12 @@ def debug_barrier(_builder=None):
     '''
     return semantic.debug_barrier(_builder)
 
+@builtin
+def barrier(_builder=None):
+    '''
+    Insert a barrier to synchronize all threads in a block.
+    '''
+    return semantic.debug_barrier(_builder)
 
 @builtin
 def multiple_of(input, values, _builder=None):

@@ -28,6 +28,8 @@ def program_id(axis: int, builder: ir.builder) -> tl.tensor:
         raise ValueError(f"program_id axis must be 0, 1, or 2 but got {axis}")
     return tl.tensor(builder.create_get_program_id(axis), tl.int32)
 
+def warp_id(builder: ir.builder) -> tl.tensor:
+    return tl.tensor(builder.create_get_warp_id(), tl.int32)
 
 def num_programs(axis: int, builder: ir.builder) -> tl.tensor:
     if axis not in (0, 1, 2):
@@ -1367,9 +1369,9 @@ def dot(lhs: tl.tensor, rhs: tl.tensor, acc: tl.tensor, input_precision: Optiona
     assert lhs_rank == rhs_rank == 2 or lhs_rank == rhs_rank == 3, f"Both inputs must be either 2D or 3D; (lhs: {lhs.shape} vs rhs: {rhs.shape})"
     assert lhs.shape[-1].value == rhs.shape[
         -2].value, f"First input shape ({lhs.shape}) and second input shape {rhs.shape} are not compatible for matmul (second index of first shape ({lhs.shape[-1].value}) must be equal to first index of second shape ({rhs.shape[-2].value})"
-    assert lhs.shape[-2].value >= 16 and lhs.shape[-1].value >= 16 \
-        and rhs.shape[-1].value >= 16, \
-        f"All non-batch values in both first input shape ({lhs.shape}) and second input shape ({rhs.shape}) must be >= 16!"
+    # assert lhs.shape[-2].value >= 16 and lhs.shape[-1].value >= 16 \
+    #     and rhs.shape[-1].value >= 16, \
+    #     f"All non-batch values in both first input shape ({lhs.shape}) and second input shape ({rhs.shape}) must be >= 16!"
     if lhs.type.scalar.is_int():
         assert lhs.type.scalar == tl.int8, "only int8 supported!"
         # TODO: This is CUDA specific, check if ROCm has the same limitation
@@ -1457,6 +1459,17 @@ def reduction(inputs: Sequence[tl.tensor], axis: int, region_builder_fn, builder
 
     return tuple(wrap_tensor(reduce_op.get_result(i), inputs[i].type.scalar, ret_shape) for i in range(len(inputs)))
 
+def all_reduction(input: tl.tensor, combine_op: str, builder: ir.builder) -> tl.tensor:
+    # combine = _str_to_combine(combine_op)
+    sca_ty = input.type.scalar
+    if combine_op == 'max':
+        combine = ir.ATOMIC_OP.MAX if sca_ty.is_floating() else ir.ATOMIC_OP.UMAX #unsigned for now
+    elif combine_op == 'add':
+        combine = ir.ATOMIC_OP.FADD if sca_ty.is_floating() else ir.ATOMIC_OP.ADD
+    else:
+        raise TypeError(f"unexpected type {combine_op}")
+    handle = builder.create_all_reduce(input.handle, combine)
+    return tl.tensor(handle, input.type)
 
 # ===----------------------------------------------------------------------===
 #                               Associative Scan
@@ -1610,7 +1623,7 @@ def make_block_ptr(base: tl.tensor, shape, strides, offsets, block_shape, order,
     #   `pointer_type<blocked<shape, element_type>>` in Python
     #   `tt.ptr<tensor<shape, element_type>>` in MLIR
     handle = builder.create_make_block_ptr(base.handle, shape, strides, offsets, block_shape, order)
-    return tl.tensor(handle, tl.pointer_type(tl.block_type(base.type.element_ty, block_shape)))
+    return tl.tensor(handle, tl.pointer_type(tl.block_type(base.type.element_ty, block_shape), base.type.address_space))
 
 
 def advance(base: tl.tensor, offsets, builder: ir.builder) -> tl.tensor:
@@ -1619,3 +1632,8 @@ def advance(base: tl.tensor, offsets, builder: ir.builder) -> tl.tensor:
 
     # Advanced block pointer type is the same as before
     return tl.tensor(builder.create_advance(base.handle, offsets), base.type)
+
+def alloc(type, builder: ir.builder) -> tl.tensor:
+    ptr_ty = tl.pointer_type(type, 3)
+    handle = builder.create_alloc(ptr_ty.to_ir(builder))
+    return tl.tensor(handle, ptr_ty)

@@ -1,4 +1,4 @@
-#include <pybind11/functional.h>
+﻿#include <pybind11/functional.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
@@ -1397,6 +1397,12 @@ void init_triton_ir(py::module &&m) {
                  ProgramIDDimAttr::get(self.getBuilder().getContext(),
                                        ProgramIDDim(axis)));
            })
+      .def("create_get_warp_id",
+           [](TritonOpBuilder &self) -> Value {
+             Value id = self.create<mlir::gpu::SubgroupIdOp>();
+             return self.create<arith::IndexCastOp>(
+                 self.getBuilder().getI32Type(), id);
+           })
       .def("create_get_num_programs",
            [](TritonOpBuilder &self, int axis) -> Value {
              if (axis < 0 || axis > 3)
@@ -1563,6 +1569,15 @@ void init_triton_ir(py::module &&m) {
            [](TritonOpBuilder &self, Value &ptr,
               std::vector<Value> &offsets) -> Value {
              return self.create<AdvanceOp>(ptr.getType(), ptr, offsets);
+           })
+      // alloc in SLM
+      .def("create_alloc",
+           [](TritonOpBuilder &self, Type type) -> Value {
+             return self.create<AllocOp>(type);
+           })
+      .def("create_all_reduce",
+           [](TritonOpBuilder &self, Value &src, RMWOp combine) -> Value {
+             return self.create<AllReduceOp>(src, combine);
            });
 
   py::class_<PassManager>(m, "pass_manager", py::module_local())

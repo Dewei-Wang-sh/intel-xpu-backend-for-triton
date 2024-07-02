@@ -118,4 +118,15 @@ def TT_InputPrecisionAttr : I32EnumAttr<
   let cppNamespace = "::mlir::triton";
 }
 
+// // reduce operation
+// def TT_CombineOpAttr : I32EnumAttr<
+//     "CombineOp", "",
+//     [
+//       I32EnumAttrCase<"ADD", 0, "add">,
+//       I32EnumAttrCase<"MAXNUMF", 1, "maxnumf">,
+//       I32EnumAttrCase<"MAXIMUMF", 2, "maximumf">
+//     ]>{
+//   let cppNamespace = "::mlir::triton";
+// }
+
 #endif
