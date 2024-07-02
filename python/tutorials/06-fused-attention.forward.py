@@ -152,9 +152,11 @@ def forward(q, k, v, causal, sm_scale):
     assert Lk in {16, 32, 64, 128}
     o = torch.empty_like(q, dtype=torch.float32)
     BLOCK_M = 128
+    # BLOCK_M = 64
     BLOCK_N = 64 if Lk <= 64 else 32
     num_stages = 1
     num_warps = 8 if Lq == 64 else 16
+    # num_warps = 4
     causal = False
     stage = 3 if causal else 1
     grid = (q.shape[0],  q.shape[1],triton.cdiv(q.shape[2], BLOCK_M))
@@ -198,7 +200,7 @@ def forward(q, k, v, causal, sm_scale):
 # #torch.save(torch_output, "./torch_output.pt")
 # torch_output = torch.load("./torch_output.pt")
 # triton_output = forward(q, k, v, causal, sm_scale)
-
+#
 # torch_outputf32 = torch_output.to(torch.float32)
 # if torch.allclose(triton_output, torch_outputf32, atol=1e-3, rtol=1e-3):
 #     print("✅ Triton and Torch match")
@@ -212,6 +214,7 @@ def forward(q, k, v, causal, sm_scale):
         # argument names to use as an x-axis for the plot
         x_names=['Z', 'H', 'N_CTX', 'D_HEAD'],
         x_vals=[[4, 48, 1024, 64]],
+        # x_vals=[[32, 32, 512, 64]],
         line_arg='provider',
         # argument name whose value corresponds to a different line in the plot
         # possible values for `line_arg``

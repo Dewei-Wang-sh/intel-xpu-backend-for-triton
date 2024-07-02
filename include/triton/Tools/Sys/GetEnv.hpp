@@ -28,6 +28,7 @@ inline const std::set<std::string> CACHE_INVALIDATING_ENV_VARS = {
     "TRITON_INTEL_ENABLE_BLOCK_PTR",
     "TRITON_INTEL_ENABLE_ADDRESS_PAYLOAD_OPT",
     "ENABLE_SLM",
+    "FROM_LLVM",
 };
 
 inline const std::set<std::string> CACHE_NEUTRAL_ENV_VARS = {

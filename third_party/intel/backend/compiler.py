@@ -234,6 +234,12 @@ class XPUBackend(BaseBackend):
         llvm.optimize_module(llvm_mod, llvm.OPTIMIZE_O3)
         intel.post_process_llir(llvm_mod)
 
+        if os.environ.get("FROM_LLVM", ""):
+            print("from llvm", flush=True)
+            llvm_mod = llvm.parse_ir_file(
+                "/home/gta/deweiwang/xpu/intel-xpu-backend-for-triton/python/tutorials/input4.ll", context)
+        print("second llvm module")
+        print(llvm_mod)
         # Get some metadata
         metadata["shared"] = src.get_int_attr("triton_gpu.shared")
         ret = str(llvm_mod)
