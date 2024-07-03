@@ -171,9 +171,11 @@ public:
          //  llvm::GenISAIntrinsic::GenISA_LSCLoadBlock);
 
         std::string funcName = llvm::GenISAIntrinsic::getName(
-            llvm::GenISAIntrinsic::GenISA_simdBlockRead);
+            llvm::GenISAIntrinsic::GenISA_LSCLoadBlock);
 
-        SmallVector<Type> argTypes{iPtrTy};
+        //SmallVector<Type> argTypes{iPtrTy};
+
+        SmallVector<Type> argTypes{iPtrTy, i32_ty, i32_ty, i32_ty, i32_ty};
         LLVM::LLVMFuncOp funcOp =
             LLVM::lookupOrCreateFn(moduleOp, funcName, argTypes, oriResTy);
         funcOp.setCConv(LLVM::cconv::CConv::SPIR_FUNC);
@@ -199,9 +201,9 @@ public:
         Value vSize = i32_val(1);
         // LSC_L1DEF_L3DEF
         Value cacheOpt = i32_val(0);
-        //SmallVector<Value> args{base, offset, dataSize, vSize, cacheOpt};
+        SmallVector<Value> args{base, offset, dataSize, vSize, cacheOpt};
 
-        SmallVector<Value> args{base};
+        //SmallVector<Value> args{base};
         auto localLoadHead = rewriter.create<LLVM::CallOp>(loc, funcOp, args);
         //base = gep(ptr_ty(rewriter.getContext(), 3), i64_ty, base, i32_val(16));
 
@@ -232,11 +234,13 @@ public:
         Value llPtr = adaptor.getPtr();
 
         std::string funcName = llvm::GenISAIntrinsic::getName(
-            llvm::GenISAIntrinsic::GenISA_simdBlockWrite);
+            llvm::GenISAIntrinsic::GenISA_LSCStoreBlock);
         rewriter.restoreInsertionPoint(insertPoint);
         Value val = adaptor.getValue();
 
-        SmallVector<Type> argTypes{iPtrTy, v16Ty};
+        //SmallVector<Type> argTypes{iPtrTy, v16Ty};
+        SmallVector<Type> argTypes{iPtrTy, i32_ty, v16Ty, i32_ty, i32_ty, i32_ty};
+
         LLVM::LLVMFuncOp funcOp =
             LLVM::lookupOrCreateFn(moduleOp, funcName, argTypes, voidTy);
         funcOp.setCConv(LLVM::cconv::CConv::SPIR_FUNC);
@@ -265,8 +269,8 @@ public:
         auto res = cast<LLVM::ShuffleVectorOp>(val.getDefiningOp()).getV1();
         res = bitcast(res, v16Ty);
 
-        //SmallVector<Value> args{base, offset, val, dataSize, vSize, cacheOpt};
-        SmallVector<Value> args{base, res};
+        SmallVector<Value> args{base, offset, bitcast(val, v16Ty), dataSize, vSize, cacheOpt};
+        //SmallVector<Value> args{base, res};
 
         auto localStore = rewriter.create<LLVM::CallOp>(loc, funcOp, args);
         //Value val1 = extract_element(v2Val, i32_val(1));
