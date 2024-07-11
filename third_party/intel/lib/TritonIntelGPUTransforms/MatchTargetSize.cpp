@@ -165,7 +165,7 @@ public:
           b.create<tt::LoadOp>(dot.getLoc(), ptr, tt::CacheModifier::NONE,
                                tt::EvictionPolicy::NORMAL, false);
       Value res = load.getResult();
-      tmpSet.insert(dot);
+      // tmpSet.insert(dot);
       res.replaceAllUsesExcept(newLoad, store);
     }
 
@@ -196,7 +196,7 @@ public:
             return triton::isTensorOrTensorPointerType(type);
           }))
         ;
-      else if (isa<scf::ForOp, scf::YieldOp, scf::IfOp>(op))
+      else if (isa<scf::ForOp, scf::YieldOp, scf::IfOp, tt::BitcastOp>(op))
         ;
       // FIXME: hack it for now
       else if (auto convert = dyn_cast<ttg::ConvertLayoutOp>(op))
@@ -219,8 +219,8 @@ public:
         transformDotOp(dot);
       else if (auto bc = dyn_cast<tt::BroadcastOp>(op))
         transformBroadcastOp(bc);
-      else if (auto bc = dyn_cast<tt::BitcastOp>(op))
-        transformBitcastOp(bc);
+      // else if (auto bc = dyn_cast<tt::BitcastOp>(op))
+      //   transformBitcastOp(bc);
       // arith,math,tt.advance,tt.load,tt.store,tt.prefetch
       // tt.splat
       else
@@ -628,12 +628,13 @@ void MatchTargetSizePass::recordRootSubSize(Type type, bool transpose) {
     sizePerTypeMap[type] = getSubOpSize(tType, 1, transpose);
   } else if (auto ptrType = dyn_cast<tt::PointerType>(type)) {
     auto tType = cast<RankedTensorType>(ptrType.getPointeeType());
+    auto as = ptrType.getAddressSpace();
     // dot c
-    if (sizePerTypeMap.count(tType) != 0)
+    if (sizePerTypeMap.count(tType) != 0 && as != 3)
       sizePerTypeMap[type] = sizePerTypeMap[tType];
     else { // load a/b, load slm
-      sizePerTypeMap[type] =
-          getSubOpSize(tType, ptrType.getAddressSpace(), transpose);
+      sizePerTypeMap[type] = getSubOpSize(tType, as, transpose);
+      // no matter map has tType or not
       sizePerTypeMap[tType] = sizePerTypeMap[type];
     }
   }
@@ -650,19 +651,21 @@ SmallVector<int64_t> MatchTargetSizePass::getSubOpSize(RankedTensorType type,
 
   int64_t colLimit = 0;
   const auto &dotShape = nativeSizes.getDotShape();
+
+  // move slm forward
+  // slm load just follow the shape innermost size
+  // at most 64 element
+  if (addrspace == 3) {
+    colLimit = shape.back();
+    int64_t row = std::min(64 / colLimit, shape.front());
+    return {row, colLimit};
+  }
   // Dot operation.
-  if (dotTypes.count(type)) {
+  else if (dotTypes.count(type)) {
     SmallVector<int64_t> nativeDotSize{dotShape.m, dotShape.n};
     auto size0 = std::min(shape[0], nativeDotSize[0]);
     auto size1 = std::min(shape[1], nativeDotSize[1]);
     return {size0, size1};
-  }
-  // slm load just follow the shape innermost size
-  // at most 64 element
-  else if (addrspace == 3) {
-    colLimit = shape.back();
-    int64_t row = std::min(64 / colLimit, shape.front());
-    return {row, colLimit};
   }
   // 32 = 2 * 16(subgroupSize) which is for large load/store
   else if (auto warpAttr = dyn_cast<ttgi::WarpEncodingAttr>(layout)) {
@@ -764,8 +767,11 @@ Value MatchTargetSizePass::getSubVal(Operation *op, Value val,
   unsigned dstIdx =
       ((srcOffset[1] % subSize[1]) / dstSize[1]) * (subSize[0] / dstSize[0]) +
       (srcOffset[0] % subSize[0]) / dstSize[0];
-  auto dstType = dstSize[0] == 1 ? RankedTensorType::get(dstSize[1], elmTy)
-                                 : RankedTensorType::get(dstSize, elmTy);
+  // auto dstType = dstSize[0] == 1 ? RankedTensorType::get(dstSize[1], elmTy)
+  //                                : RankedTensorType::get(dstSize, elmTy);
+  if (dstSize[0] == 1)
+    op->dump();
+  auto dstType = RankedTensorType::get(dstSize, elmTy);
   Value dstVal = b.create<ttgi::ExtractOp>(loc, dstType, subSrcVal, dstIdx);
   return dstVal;
 }
@@ -779,8 +785,8 @@ void MatchTargetSizePass::transformReduceOp(tt::ReduceOp op) {
   auto dims = srcTy.getShape().size();
   auto axis = op.getAxis();
 
+  auto [shape, subType, subSize] = getSubTypeAndShape(srcTy);
   if (axis == 0 && dims == 2) {
-    auto [shape, subType, subSize] = getSubTypeAndShape(srcTy);
     // early return for 16x1xf32
     if (shape == subSize)
       return;
@@ -847,7 +853,7 @@ void MatchTargetSizePass::transformReduceOp(tt::ReduceOp op) {
   // FIXME: 16 is the supported IR reduce length
   SmallVector<Value> glueVals;
   // fixed 8 for now
-  unsigned step = 8;
+  unsigned step = std::min(8L, subSize[0]);
   for (unsigned i = 0; i < outer; i += step) {
     SmallVector<Value> subVals;
     for (unsigned j = 0; j < srcTy.getShape()[axis]; j += 16) {
@@ -880,9 +886,9 @@ void MatchTargetSizePass::transformReduceOp(tt::ReduceOp op) {
     }
     SmallVector<Value> subOps;
     for (unsigned j = 0; j < step; j++) {
-      auto subType = RankedTensorType::get(16, srcTy.getElementType());
+      auto subType = RankedTensorType::get({1, 16}, srcTy.getElementType());
       Value subAcc = b.create<ttgi::ExtractOp>(loc, subType, acc, j);
-      auto subRed = b.create<tt::ReduceOp>(loc, subAcc, 0);
+      auto subRed = b.create<tt::ReduceOp>(loc, subAcc, axis);
       auto &subRegion = subRed.getCombineOp();
       b.cloneRegionBefore(op.getCombineOp(), subRegion, subRegion.end());
       subOps.push_back(subRed.getResult()[0]);
@@ -992,16 +998,23 @@ void MatchTargetSizePass::transformDotOp(tt::DotOp dot) {
 
   auto getSubDotVal = [&](Value val, int64_t mm, int64_t kk, int64_t mStep,
                           int64_t kStep, bool hack = false) {
-    auto [shape, subType, subSize] = getSubTypeAndShape(val.getType(), hack);
+    auto [shape, subType, subSize] = getSubTypeAndShape(val.getType());
     unsigned subIdx =
         (kk / subSize[1]) * (shape[0] / subSize[0]) + mm / subSize[0];
     Value subVal = b.create<ttgi::ExtractOp>(loc, subType, val, subIdx);
+
+    // paged has 1x64,  1x32
+    mStep = std::min(mStep, shape[0]);
+    kStep = std::min(kStep, shape[1]);
     auto subDotType = RankedTensorType::get(
         {mStep, kStep},
         val.getType().cast<RankedTensorType>().getElementType());
     unsigned subDotIdx = ((kk % subSize[1]) / kStep) * (subSize[0] / mStep) +
                          (mm % subSize[0]) / mStep;
-    return b.create<ttgi::ExtractOp>(loc, subDotType, subVal, subDotIdx);
+    Value result =
+        b.create<ttgi::ExtractOp>(loc, subDotType, subVal, subDotIdx);
+    // if (mStep > shape[0])
+    return result;
   };
 
   auto [shape, subType, subSize] = getSubTypeAndShape(cType);
@@ -1010,8 +1023,8 @@ void MatchTargetSizePass::transformDotOp(tt::DotOp dot) {
     for (unsigned mm = 0; mm < m; mm += dotShape.m) {
       Value subDotC = getSubDotVal(dot.getC(), mm, nn, dotShape.m, dotShape.n);
       for (unsigned kk = 0; kk < k; kk += dotShape.k) {
-        Value subDotA = getSubDotVal(dot.getA(), mm, kk, dotShape.m, dotShape.k,
-                                     tmpSet.count(dot));
+        Value subDotA =
+            getSubDotVal(dot.getA(), mm, kk, dotShape.m, dotShape.k);
         Value subDotB =
             getSubDotVal(dot.getB(), kk, nn, dotShape.k, dotShape.n);
         subDotC = b.create<tt::DotOp>(loc, subDotA, subDotB, subDotC,
@@ -1067,7 +1080,7 @@ void MatchTargetSizePass::transformBitcastOp(tt::BitcastOp op) {
   OpBuilder b(op);
   auto loc = op->getLoc();
   Type resType = op.getResult().getType();
-  if (auto tType = cast<RankedTensorType>(resType)) {
+  if (auto tType = dyn_cast<RankedTensorType>(resType)) {
     if (!isa<ttg::SliceEncodingAttr>(tType.getEncoding()))
       op.getResult().setType(
           RankedTensorType::get(tType.getShape(), tType.getElementType()));
@@ -1076,6 +1089,10 @@ void MatchTargetSizePass::transformBitcastOp(tt::BitcastOp op) {
 }
 
 void MatchTargetSizePass::transformGenericOp(Operation *op) {
+  if (auto trunc = dyn_cast<arith::TruncFOp>(op)) {
+    sizePerTypeMap[trunc.getType()] = sizePerTypeMap[trunc.getIn().getType()];
+  }
+
   unsigned numResults = op->getResults().size();
   unsigned dotIdx = 2;
   Type type;

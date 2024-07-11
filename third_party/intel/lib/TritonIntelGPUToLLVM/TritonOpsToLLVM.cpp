@@ -479,6 +479,17 @@ public:
     Value base = adaptor.getBase();
     unsigned idx = adaptor.getIndex();
     auto dstType = getTypeConverter()->convertType(op.getType());
+
+    /// %extract = ttgi.extract %a[0] : tensor<4xf16> -> tensor<4xf16>
+    if (auto tType = dyn_cast<RankedTensorType>(op.getType())) {
+      if (auto srcType = dyn_cast<RankedTensorType>(op.getBase().getType())) {
+        if (tType.getNumElements() == srcType.getNumElements()) {
+          rewriter.replaceOp(op, base);
+          return success();
+        }
+      }
+    }
+
     Value result;
     if (auto vecTy = dyn_cast<VectorType>(dstType)) {
       unsigned numElts = vecTy.getNumElements();
@@ -647,6 +658,14 @@ public:
   LogicalResult
   matchAndRewrite(BitcastOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
+    if (isa<triton::PointerType>(op.getType())) {
+      Location loc = op->getLoc();
+      Type dstType = getTypeConverter()->convertType(op.getType());
+      auto newOp =
+          rewriter.create<LLVM::BitcastOp>(loc, dstType, adaptor.getSrc());
+      rewriter.replaceOp(op, newOp);
+      return success();
+    }
     // keep it simple for now
     auto src = adaptor.getSrc();
     rewriter.replaceOp(op, src);
