@@ -65,6 +65,7 @@ def TTIG_GlueOp : TTIG_Op<"glue", [Pure]> {
     operands attr-dict `:` functional-type(operands, results)
   }];
   let hasVerifier = 1;
+  // let hasFolder = 1;
 }
 
 def TTIG_ExtractOp : TTIG_Op<"extract", [Pure]> {

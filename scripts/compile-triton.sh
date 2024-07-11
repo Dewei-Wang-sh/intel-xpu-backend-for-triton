@@ -3,7 +3,7 @@
 set -euo pipefail
 
 # Select what to build.
-BUILD_LLVM=false
+BUILD_LLVM=true
 BUILD_TRITON=false
 CLEAN=false
 VENV=false
@@ -117,11 +117,15 @@ fi
 
 build_llvm() {
 
-  # Clone the Intel LLVM repository (genx branch).
+  # Clone LLVM repository
   if [ ! -d "$LLVM_PROJ" ]; then
     echo "**** Cloning $LLVM_PROJ ****"
     cd $BASE
-    git clone --recursive https://github.com/intel/llvm.git -b genx
+    LLVM_COMMIT_ID="$(<$BASE/intel-xpu-backend-for-triton/cmake/llvm-hash.txt)"
+    git clone --recurse-submodules --jobs 8 https://github.com/llvm/llvm-project.git llvm
+    cd llvm
+    git checkout $LLVM_COMMIT_ID
+    git submodule update --recursive
   fi
 
   echo "****** Configuring $LLVM_PROJ ******"
@@ -141,7 +145,7 @@ build_llvm() {
   cd $LLVM_PROJ_BUILD
   cmake -G Ninja ../llvm \
     -DLLVM_ENABLE_DUMP=1 \
-    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_BUILD_TYPE=Debug \
     -DLLVM_ENABLE_ASSERTIONS=true \
     -DLLVM_ENABLE_PROJECTS="mlir" \
     -DLLVM_TARGETS_TO_BUILD="X86;NVPTX;AMDGPU" \
@@ -157,6 +161,7 @@ build_llvm() {
   ninja install
   ninja check-mlir
 }
+
 
 ############################################################################
 ## Configure and build the Triton project.

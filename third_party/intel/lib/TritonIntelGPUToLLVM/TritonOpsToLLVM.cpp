@@ -640,6 +640,20 @@ public:
   }
 };
 
+class BitcastOpConversion : public ConvertTritonGPUOpToLLVMPattern<BitcastOp> {
+public:
+  using ConvertTritonGPUOpToLLVMPattern<
+      BitcastOp>::ConvertTritonGPUOpToLLVMPattern;
+  LogicalResult
+  matchAndRewrite(BitcastOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    // keep it simple for now
+    auto src = adaptor.getSrc();
+    rewriter.replaceOp(op, src);
+    return success();
+  }
+};
+
 class ArithDivFOpLowering
     : public ConvertTritonGPUOpToLLVMPattern<mlir::arith::DivFOp> {
   using ConvertTritonGPUOpToLLVMPattern<
@@ -689,4 +703,5 @@ void mlir::triton::intel::populateTritonOpsToLLVMPatterns(
   patterns.add<ReduceOpConversion>(typeConverter, benefit);
   patterns.add<ExpandDimsOpConversion>(typeConverter, benefit);
   patterns.add<BroadcastOpConversion>(typeConverter, benefit);
+  patterns.add<BitcastOpConversion>(typeConverter, benefit);
 }

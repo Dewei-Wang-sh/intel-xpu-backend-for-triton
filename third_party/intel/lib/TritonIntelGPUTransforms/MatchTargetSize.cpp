@@ -173,8 +173,8 @@ public:
     // A candidate 'tt.dot' operation yields a tensor with a warp layout.
     m.walk([&](tt::DotOp dot) {
       auto resultType = cast<RankedTensorType>(dot.getResult().getType());
-      if (isCandidate(resultType))
-        dotAttrs.insert(resultType.getEncoding());
+      // dotAttrs.insert(resultType.getEncoding());
+      dotTypes.insert(resultType);
     });
 
     auto hasSliceAttr = [](Type type) {
@@ -192,9 +192,11 @@ public:
                                     op->getResultTypes().end());
       types.append(resultTypes);
 
-      if (llvm::none_of(types, [this](Type type) { return isCandidate(type); }))
+      if (llvm::none_of(types, [this](Type type) {
+            return triton::isTensorOrTensorPointerType(type);
+          }))
         ;
-      else if (isa<scf::ForOp, scf::YieldOp>(op))
+      else if (isa<scf::ForOp, scf::YieldOp, scf::IfOp>(op))
         ;
       // FIXME: hack it for now
       else if (auto convert = dyn_cast<ttg::ConvertLayoutOp>(op))
@@ -210,14 +212,17 @@ public:
         recordRootSubSize(cstOp.getResult().getType());
         transformArithConstantOp(cstOp);
       } else if (auto ptrOp = dyn_cast<tt::MakeTensorPtrOp>(op)) {
-        recordRootSubSize(ptrOp.getResult().getType());
+        recordRootSubSize(ptrOp.getResult().getType(),
+                          ptrOp.getOrder().back() != 0);
         transformMakeTensorPtrOp(ptrOp);
       } else if (auto dot = dyn_cast<tt::DotOp>(op))
         transformDotOp(dot);
       else if (auto bc = dyn_cast<tt::BroadcastOp>(op))
         transformBroadcastOp(bc);
+      else if (auto bc = dyn_cast<tt::BitcastOp>(op))
+        transformBitcastOp(bc);
       // arith,math,tt.advance,tt.load,tt.store,tt.prefetch
-      // tt.splat, tt.broadcast
+      // tt.splat
       else
         transformGenericOp(op);
       return WalkResult::advance();
@@ -250,8 +255,9 @@ private:
   /// Canonicalize operations (e.g. remove redundant tt.extract, tt.glue)
   void canonicalize();
 
-  void recordRootSubSize(Type type);
-  SmallVector<int64_t> getSubOpSize(RankedTensorType type) const;
+  void recordRootSubSize(Type type, bool transpose = false);
+  SmallVector<int64_t> getSubOpSize(RankedTensorType type, int addrspace = 1,
+                                    bool transpose = false) const;
   std::tuple<SmallVector<int64_t>, Type, SmallVector<int64_t>>
   getSubTypeAndShape(Type type, bool hack = false) const;
   Value getSubVal(Operation *op, Value val, ArrayRef<int64_t> srcOffset,
@@ -263,15 +269,18 @@ private:
   void transformDotOp(tt::DotOp dot);
   void transformReduceOp(tt::ReduceOp op);
   void transformBroadcastOp(tt::BroadcastOp op);
+  void transformBitcastOp(tt::BitcastOp op);
 
   /// Generic transformation.
   void transformGenericOp(Operation *op);
 
   /// Record the native size supported by the target implementation.
   DenseMap<Attribute, SmallVector<int64_t>> sizePerAttrMap;
+  DenseMap<Type, SmallVector<int64_t>> sizePerTypeMap;
 
   /// Collects the result layout of the `tt.dot` operations in the module.
   DenseSet<Attribute> dotAttrs;
+  DenseSet<RankedTensorType> dotTypes;
 
   /// The native operation sizes supported by the target architecture.
   TargetArchNativeSizes nativeSizes;
@@ -314,13 +323,21 @@ public:
     DenseMap<Value, int> userIndexMap;
     auto idx = 0;
     for (auto [arg, init] : llvm::zip(op.getRegionIterArgs(), op.getInits())) {
-      auto glue = dyn_cast<ttgi::GlueOp>(init.getDefiningOp());
-      if (!glue) {
+      // auto glue = dyn_cast<ttgi::GlueOp>(init.getDefiningOp());
+      // if (!glue) {
+      //   newInits.push_back(init);
+      //   userIndexMap[arg] = idx;
+      //   idx++;
+      //   continue;
+      // }
+      Operation *definingOp = init.getDefiningOp();
+      if (!isa_and_nonnull<ttgi::GlueOp>(definingOp)) {
         newInits.push_back(init);
-        userIndexMap[arg] = idx;
-        idx++;
+        userIndexMap[arg] = idx++;
         continue;
       }
+
+      auto glue = cast<ttgi::GlueOp>(definingOp);
       auto numSplit = glue->getOperands().size();
       for (auto i = 0; i < numSplit; i++) {
         newInits.push_back(glue->getOperand(i));
@@ -603,45 +620,65 @@ void MatchTargetSizePass::canonicalize() {
     signalPassFailure();
 }
 
-void MatchTargetSizePass::recordRootSubSize(Type type) {
-  if (auto tensorType = dyn_cast<RankedTensorType>(type)) {
-    Attribute layout = tensorType.getEncoding();
-    assert(layout && "Expecting a valid layout");
-    if (sizePerAttrMap.count(layout) == 0)
-      sizePerAttrMap[layout] = getSubOpSize(tensorType);
+// dot C , make_tensor_ptr, we can only recored rankedtensortype
+void MatchTargetSizePass::recordRootSubSize(Type type, bool transpose) {
+  if (sizePerTypeMap.count(type) != 0)
     return;
+  if (auto tType = dyn_cast<RankedTensorType>(type)) {
+    sizePerTypeMap[type] = getSubOpSize(tType, 1, transpose);
+  } else if (auto ptrType = dyn_cast<tt::PointerType>(type)) {
+    auto tType = cast<RankedTensorType>(ptrType.getPointeeType());
+    // dot c
+    if (sizePerTypeMap.count(tType) != 0)
+      sizePerTypeMap[type] = sizePerTypeMap[tType];
+    else { // load a/b, load slm
+      sizePerTypeMap[type] =
+          getSubOpSize(tType, ptrType.getAddressSpace(), transpose);
+      sizePerTypeMap[tType] = sizePerTypeMap[type];
+    }
   }
-
-  if (auto ptrType = dyn_cast<tt::PointerType>(type))
-    recordRootSubSize(ptrType.getPointeeType());
+  return;
 }
 
 /// Return the native size supported by the target architecture.
-SmallVector<int64_t>
-MatchTargetSizePass::getSubOpSize(RankedTensorType type) const {
+SmallVector<int64_t> MatchTargetSizePass::getSubOpSize(RankedTensorType type,
+                                                       int addrspace,
+                                                       bool transpose) const {
   Attribute layout = type.getEncoding();
   assert(layout && "Expecting a valid layout");
+  ArrayRef<int64_t> shape = type.getShape();
 
   int64_t colLimit = 0;
   const auto &dotShape = nativeSizes.getDotShape();
   // Dot operation.
-  if (dotAttrs.count(layout)) {
+  if (dotTypes.count(type)) {
     SmallVector<int64_t> nativeDotSize{dotShape.m, dotShape.n};
-    return nativeDotSize;
-    // 32 = 2 * 16(subgroupSize) which is for large load/store
-  } else if (auto warpAttr = dyn_cast<ttgi::WarpEncodingAttr>(layout)) {
+    auto size0 = std::min(shape[0], nativeDotSize[0]);
+    auto size1 = std::min(shape[1], nativeDotSize[1]);
+    return {size0, size1};
+  }
+  // slm load just follow the shape innermost size
+  // at most 64 element
+  else if (addrspace == 3) {
+    colLimit = shape.back();
+    int64_t row = std::min(64 / colLimit, shape.front());
+    return {row, colLimit};
+  }
+  // 32 = 2 * 16(subgroupSize) which is for large load/store
+  else if (auto warpAttr = dyn_cast<ttgi::WarpEncodingAttr>(layout)) {
     colLimit = 32;
   } else if (auto dotAttr = dyn_cast<ttg::DotOperandEncodingAttr>(layout)) {
-    if (dotAttr.getKWidth() != 0 && dotAttr.getOpIdx() == 1)
+    // if (dotAttr.getKWidth() != 0 && dotAttr.getOpIdx() == 1)
+    if (transpose && dotAttr.getOpIdx() == 1)
       return {dotShape.k, dotShape.n};
     colLimit = 32;
     // hack for attn
-    if (dotAttr.getOpIdx() == 1 && type.getShape()[1] == 64)
-      colLimit = 16;
+    // if (dotAttr.getOpIdx() == 1 && type.getShape()[1] == 64)
+    //   colLimit = 16;
   }
 
   // Load/Store operations.
-  ArrayRef<int64_t> shape = type.getShape();
+  // ArrayRef<int64_t> shape = type.getShape();
   const unsigned sizeInBytes = type.getElementTypeBitWidth() / 8;
   unsigned maxLoadStoreSize = nativeSizes.getLoadStoreSize();
 
@@ -667,6 +704,26 @@ MatchTargetSizePass::getSubOpSize(RankedTensorType type) const {
 /// return [shape, subType, subSize] for a tensor (or pointer to tensor)
 std::tuple<SmallVector<int64_t>, Type, SmallVector<int64_t>>
 MatchTargetSizePass::getSubTypeAndShape(Type type, bool hack) const {
+  if (triton::isTensorOrTensorPointerType(type)) {
+    auto subSize = sizePerTypeMap.at(type);
+    RankedTensorType tType;
+    if (auto ptrType = dyn_cast<tt::PointerType>(type)) {
+      tType = cast<RankedTensorType>(ptrType.getPointeeType());
+      SmallVector<int64_t> shape = to_vector(tType.getShape());
+      auto subType = RankedTensorType::get(
+          subSize, tType.getElementType() /*no encoding*/);
+      auto newType = tt::PointerType::get(subType, ptrType.getAddressSpace());
+      return {shape, newType, subSize};
+    } else {
+      tType = cast<RankedTensorType>(type);
+      SmallVector<int64_t> shape = to_vector(tType.getShape());
+      auto subType = RankedTensorType::get(
+          subSize, tType.getElementType() /*no encoding*/);
+      return {shape, subType, subSize};
+    }
+  }
+  return {{0}, type, {0}};
+
   if (auto tensorType = dyn_cast<RankedTensorType>(type)) {
     Attribute layout = tensorType.getEncoding();
     assert(layout && "Expecting a valid layout");
@@ -721,6 +778,66 @@ void MatchTargetSizePass::transformReduceOp(tt::ReduceOp op) {
   auto srcTy = cast<RankedTensorType>(src.getType());
   auto dims = srcTy.getShape().size();
   auto axis = op.getAxis();
+
+  if (axis == 0 && dims == 2) {
+    auto [shape, subType, subSize] = getSubTypeAndShape(srcTy);
+    // early return for 16x1xf32
+    if (shape == subSize)
+      return;
+    assert(subSize[1] >= 16);
+    // for 16x64xf32
+    SmallVector<Value> subVals;
+    for (unsigned i = 0; i < shape[0]; i += subSize[0]) {
+      for (unsigned j = 0; j < shape[1]; j += subSize[1]) {
+        Value subVal = getSubVal(op, src, {i, j}, subSize);
+        subVals.push_back(subVal);
+      }
+    }
+    auto combine = op.getCombineOp().front().getOperations().begin();
+    auto id = combine->getName().getIdentifier();
+    Operation *accOp;
+    switch (subVals.size()) {
+    case 16: {
+      auto acc01 = b.create(loc, id, {subVals[0], subVals[1]}, subType);
+      auto acc23 = b.create(loc, id, {subVals[2], subVals[3]}, subType);
+      auto acc03 = b.create(loc, id, {acc01->getResult(0), acc23->getResult(0)},
+                            subType);
+
+      auto acc45 = b.create(loc, id, {subVals[4], subVals[5]}, subType);
+      auto acc67 = b.create(loc, id, {subVals[6], subVals[7]}, subType);
+      auto acc47 = b.create(loc, id, {acc45->getResult(0), acc67->getResult(0)},
+                            subType);
+
+      auto acc07 = b.create(loc, id, {acc03->getResult(0), acc47->getResult(0)},
+                            subType);
+
+      auto acc89 = b.create(loc, id, {subVals[8], subVals[9]}, subType);
+      auto acc1011 = b.create(loc, id, {subVals[10], subVals[11]}, subType);
+      auto acc811 = b.create(
+          loc, id, {acc89->getResult(0), acc1011->getResult(0)}, subType);
+
+      auto acc1213 = b.create(loc, id, {subVals[12], subVals[13]}, subType);
+      auto acc1415 = b.create(loc, id, {subVals[14], subVals[15]}, subType);
+      auto acc1215 = b.create(
+          loc, id, {acc1213->getResult(0), acc1415->getResult(0)}, subType);
+
+      auto acc815 = b.create(
+          loc, id, {acc811->getResult(0), acc1215->getResult(0)}, subType);
+
+      accOp = b.create(loc, id, {acc07->getResult(0), acc815->getResult(0)},
+                       subType);
+      break;
+    }
+    default:
+      assert(false && "add more reduce size support");
+    }
+    // auto bc = b.create<tt::BitcastOp>(loc, op.getResultTypes().front(),
+    // accOp->getResults().front());
+    op->replaceAllUsesWith(accOp);
+    op->erase();
+    return;
+  }
+
   assert(axis == dims - 1 && "only support last axis");
   assert(dims <= 2 && "only support 1D/2D tensor");
   auto outer = dims == 2 ? srcTy.getShape()[0] : 1;
@@ -783,9 +900,9 @@ void MatchTargetSizePass::transformReduceOp(tt::ReduceOp op) {
 void MatchTargetSizePass::transformMakeTensorPtrOp(tt::MakeTensorPtrOp op) {
   Type resultType = op.getResult().getType();
   bool hack = false;
-  if (cast<tt::PointerType>(resultType).getAddressSpace() == 3) {
-    hack = true;
-  }
+  // if (cast<tt::PointerType>(resultType).getAddressSpace() == 3) {
+  //   hack = true;
+  // }
   auto [shape, subType, subSize] = getSubTypeAndShape(resultType, hack);
   unsigned dim = shape.size();
   OpBuilder b(op);
@@ -946,6 +1063,18 @@ void MatchTargetSizePass::transformBroadcastOp(tt::BroadcastOp op) {
   return;
 }
 
+void MatchTargetSizePass::transformBitcastOp(tt::BitcastOp op) {
+  OpBuilder b(op);
+  auto loc = op->getLoc();
+  Type resType = op.getResult().getType();
+  if (auto tType = cast<RankedTensorType>(resType)) {
+    if (!isa<ttg::SliceEncodingAttr>(tType.getEncoding()))
+      op.getResult().setType(
+          RankedTensorType::get(tType.getShape(), tType.getElementType()));
+  }
+  return;
+}
+
 void MatchTargetSizePass::transformGenericOp(Operation *op) {
   unsigned numResults = op->getResults().size();
   unsigned dotIdx = 2;
@@ -976,15 +1105,15 @@ void MatchTargetSizePass::transformGenericOp(Operation *op) {
   bool hack = false;
   if (auto store = dyn_cast<tt::StoreOp>(op)) {
     auto ptrTy = store.getPtr().getType();
-    if (cast<tt::PointerType>(ptrTy).getAddressSpace() == 3) {
-      hack = true;
-    }
+    // if (cast<tt::PointerType>(ptrTy).getAddressSpace() == 3) {
+    //   hack = true;
+    // }
   }
   if (auto load = dyn_cast<tt::LoadOp>(op)) {
     auto ptrTy = load.getPtr().getType();
-    if (cast<tt::PointerType>(ptrTy).getAddressSpace() == 3) {
-      hack = true;
-    }
+    // if (cast<tt::PointerType>(ptrTy).getAddressSpace() == 3) {
+    //   hack = true;
+    // }
   }
   auto [shape, subType, subSize] = getSubTypeAndShape(type, hack);
 

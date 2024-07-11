@@ -144,6 +144,13 @@ LogicalResult GlueOp::verify() {
   return success();
 }
 
+// OpFoldResult GlueOp::fold(FoldAdaptor adaptor) {
+//   // glue %t1 -> %t1
+//   if (getOperands().size() == 1)
+//     return getOperands().front();
+//   return {};
+// }
+
 LogicalResult ExtractOp::verify() {
   /*
   Type resultType = getRes().getType();

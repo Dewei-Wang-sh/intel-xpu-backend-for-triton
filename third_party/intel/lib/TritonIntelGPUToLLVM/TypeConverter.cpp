@@ -36,6 +36,13 @@ TritonIntelGPUToLLVMTypeConverter::TritonIntelGPUToLLVMTypeConverter(
       if (!type.getEncoding() ||
           isa<mlir::triton::gpu::DotOperandEncodingAttr>(type.getEncoding()))
         num /= 16;
+      if (auto encoding = type.getEncoding()) {
+        if (auto attr =
+                dyn_cast<mlir::triton::gpu::SliceEncodingAttr>(encoding)) {
+          if (attr.getDim() == 0 && num >= 16)
+            num /= 16;
+        }
+      }
       if (num == 1)
         return elmTy;
       return mlir::VectorType::get(num, elmTy);
