@@ -159,16 +159,15 @@ public:
 
       if constexpr (std::is_same_v<OpType, LoadOp>) {
 
-          
-        auto oriResTy = VectorType::get(16 /* sg_size */, i64_ty);
+        //auto oriResTy = VectorType::get(16 /* sg_size */, i64_ty);
+        // sg_size(16) x i64 = 64 x i16
+        auto oriResTy = VectorType::get(64, i16_ty);
         auto v4i16Ty = VectorType::get(4, i16_ty);
         auto v8i16Ty = VectorType::get(8, i16_ty);
         auto vecf16ResTy = VectorType::get(64, f16_ty);
         Value llPtr = adaptor.getPtr();
 
         auto iPtrTy = LLVM::LLVMPointerType::get(rewriter.getContext(), 3);
-        //std::string funcName = llvm::GenISAIntrinsic::getName(
-         //  llvm::GenISAIntrinsic::GenISA_LSCLoadBlock);
 
         std::string funcName = llvm::GenISAIntrinsic::getName(
             llvm::GenISAIntrinsic::GenISA_simdBlockRead);
@@ -184,39 +183,13 @@ public:
         Value blkId = add(mul(udiv(offsetY, i32_val(8)), i32_val(4)),
                           udiv(offsetX, i32_val(16)));
 
-        Value offset = i32_val(0);
 
         Value index = mul(blkId, i32_val(128));
 
         base = gep(ptr_ty(rewriter.getContext(), 3), i16_ty, base, index);
 
-        // laneoffset
-        base = gep(ptr_ty(rewriter.getContext(), 3), i64_ty, base, i32_val(0));
-
-        // LSC_DATA_SIZE_64b in visa_igc_common_header.h
-        Value dataSize = i32_val(4);
-        // vectorSize = 1 LSC_DATA_ELEMS_1 in visa_igc_common_header.h
-        Value vSize = i32_val(1);
-        // LSC_L1DEF_L3DEF
-        Value cacheOpt = i32_val(0);
-        //SmallVector<Value> args{base, offset, dataSize, vSize, cacheOpt};
-
         SmallVector<Value> args{base};
         auto localLoadHead = rewriter.create<LLVM::CallOp>(loc, funcOp, args);
-        //base = gep(ptr_ty(rewriter.getContext(), 3), i64_ty, base, i32_val(16));
-
-        //SmallVector<Value> tailArgs{base, offset, dataSize, vSize, cacheOpt};
-
-        //auto localLoadTail =
-        //    rewriter.create<LLVM::CallOp>(loc, funcOp, tailArgs);
-
-        //SmallVector<int32_t> indices(8);
-        //std::iota(indices.begin(), indices.end(), 0);
-        //DenseI32ArrayAttr attr = rewriter.getDenseI32ArrayAttr(indices);
-
-        //auto concatVec = rewriter.create<LLVM::ShuffleVectorOp>(
-        //    loc, v8i16Ty, bitcast(localLoadHead.getResult(), v4i16Ty),
-        //    bitcast(localLoadTail.getResult(), v4i16Ty), attr);
         rewriter.replaceOp(op, bitcast(localLoadHead.getResult(), vecf16ResTy));
 
         return success();
@@ -224,10 +197,9 @@ public:
       if constexpr (std::is_same_v<OpType, StoreOp>) {
         auto voidTy = LLVM::LLVMVoidType::get(rewriter.getContext());
 
-        llvm::LLVMContext llvmContext;
-        LLVM::TypeToLLVMIRTranslator typeTranslator(llvmContext);
         auto v2Ty = VectorType::get(2, i64_ty);
-        auto v16Ty = VectorType::get(16, i64_ty);
+        // sg_size(16) x i64 = 64 x i64 (to avoid bitcast)
+        auto v16Ty = VectorType::get(64, i16_ty);
         auto iPtrTy = LLVM::LLVMPointerType::get(rewriter.getContext(), 3);
         Value llPtr = adaptor.getPtr();
 
@@ -250,34 +222,13 @@ public:
         Value index = mul(blkId, i32_val(128));
 
         base = gep(ptr_ty(rewriter.getContext(), 3), i16_ty, base, index);
-        // laneoffset
-        base = gep(ptr_ty(rewriter.getContext(), 3), i64_ty, base, i32_val(0));
 
-        // LSC_DATA_SIZE_64b in visa_igc_common_header.h
-        Value dataSize = i32_val(4);
-        // vectorSize = 1 LSC_DATA_ELEMS_1 in visa_igc_common_header.h
-        Value vSize = i32_val(1);
-
-        // LSC_L1DEF_L3DEF
-        Value cacheOpt = i32_val(0);
-        Value v2Val = bitcast(val, v2Ty);
-        //val = extract_element(v2Val, i32_val(0));
-        auto res = cast<LLVM::ShuffleVectorOp>(val.getDefiningOp()).getV1();
+        auto res = cast<LLVM::ShuffleVectorOp>(val.getDefiningOp()).getRes();
         res = bitcast(res, v16Ty);
 
-        //SmallVector<Value> args{base, offset, val, dataSize, vSize, cacheOpt};
         SmallVector<Value> args{base, res};
 
         auto localStore = rewriter.create<LLVM::CallOp>(loc, funcOp, args);
-        //Value val1 = extract_element(v2Val, i32_val(1));
-
-        //// one i64
-        //// laneoffset
-        //// for second store, next line, 16(sg) x 8bytes
-        //base = gep(ptr_ty(rewriter.getContext(), 3), i64_ty, base, i32_val(16));
-
-        //SmallVector<Value> args1{base, offset, val1, dataSize, vSize, cacheOpt};
-        //auto localStore1 = rewriter.create<LLVM::CallOp>(loc, funcOp, args1);
 
         rewriter.eraseOp(op);
         return success();
