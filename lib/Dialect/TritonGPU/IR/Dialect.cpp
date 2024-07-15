@@ -2046,10 +2046,13 @@ public:
     } else if (auto warpAttr = mlir::dyn_cast<intel::WarpEncodingAttr>(attr)) {
       os << "warp";
       return AliasResult::FinalAlias;
-    } /* else if (auto sliceAttr = dyn_cast<SliceEncodingAttr>(attr)) {
+    } else if (auto dotAttr = dyn_cast<DotOperandEncodingAttr>(attr)) {
+      os << "dot";
+      return AliasResult::FinalAlias;
+    } else if (auto sliceAttr = dyn_cast<SliceEncodingAttr>(attr)) {
       os << "slice";
       return AliasResult::FinalAlias;
-    } */
+    }
     return OpAsmDialectInterface::getAlias(attr, os);
   }
 };

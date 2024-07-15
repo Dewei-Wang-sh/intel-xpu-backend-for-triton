@@ -3,7 +3,7 @@
 set -euo pipefail
 
 # Select what to build.
-BUILD_LLVM=true
+BUILD_LLVM=false
 BUILD_TRITON=false
 CLEAN=false
 VENV=false
@@ -185,9 +185,10 @@ build_triton() {
   echo "**** Configuring $TRITON_PROJ ****"
   cd $TRITON_PROJ
 
-  if [ "$BUILD_LLVM" = true ]; then
-    export LLVM_SYSPATH=$PACKAGES_DIR/llvm
-  fi
+  export LLVM_SYSPATH=$PACKAGES_DIR/llvm
+  #if [ "$BUILD_LLVM" = true ]; then
+  #  export LLVM_SYSPATH=$PACKAGES_DIR/llvm
+  #fi
   export DEBUG=1
   if [ "$CCACHE" = true ]
   then

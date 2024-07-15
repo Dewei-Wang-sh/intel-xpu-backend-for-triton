@@ -278,6 +278,16 @@ def TritonIntelGPUScheduleLoad : Pass<"tritonintelgpu-schedule-load", "mlir::Mod
                            "mlir::triton::gpu::TritonGPUDialect"];
 }
 
+def TritonIntelGPUAttrAnnotate : Pass<"tritonintelgpu-attr-annotate", "mlir::ModuleOp"> {
+  let summary = "annotate operation with layout attr";
+
+  let description = [{
+  }];
+
+  let dependentDialects = ["mlir::triton::TritonDialect",
+                           "mlir::triton::gpu::intel::TritonIntelGPUDialect",
+                           "mlir::triton::gpu::TritonGPUDialect"];
+}
 
 
 #endif // TRITON_INTEL_GPU_PASSES

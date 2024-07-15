@@ -1,5 +1,6 @@
 add_triton_library(TritonIntelGPUTransforms
   AccelerateMatmul.cpp
+  AttrAnnotate.cpp
   DistributeToWarps.cpp
   MatchTargetSize.cpp
   Pipeliner/MatmulLoopPipeline.cpp
