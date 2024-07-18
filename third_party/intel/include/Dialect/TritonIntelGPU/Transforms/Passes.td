@@ -278,7 +278,7 @@ def TritonIntelGPUScheduleLoad : Pass<"tritonintelgpu-schedule-load", "mlir::Mod
                            "mlir::triton::gpu::TritonGPUDialect"];
 }
 
-def TritonIntelGPUAttrAnnotate : Pass<"tritonintelgpu-attr-annotate", "mlir::ModuleOp"> {
+def TritonIntelGPUAnnotateAttr : Pass<"tritonintelgpu-annotate-attr", "mlir::ModuleOp"> {
   let summary = "annotate operation with layout attr";
 
   let description = [{
@@ -289,5 +289,18 @@ def TritonIntelGPUAttrAnnotate : Pass<"tritonintelgpu-attr-annotate", "mlir::Mod
                            "mlir::triton::gpu::TritonGPUDialect"];
 }
 
+def TritonIntelGPUExpandSLM : Pass<"tritonintelgpu-expand-slm", "mlir::ModuleOp"> {
+  let summary = "expand slm related ops";
+
+  let description = [{
+  }];
+
+  let dependentDialects = ["mlir::triton::TritonDialect",
+                           "mlir::triton::gpu::intel::TritonIntelGPUDialect",
+                           "mlir::triton::gpu::TritonGPUDialect",
+                           "mlir::scf::SCFDialect",
+                           "mlir::arith::ArithDialect"
+                           ];
+}
 
 #endif // TRITON_INTEL_GPU_PASSES

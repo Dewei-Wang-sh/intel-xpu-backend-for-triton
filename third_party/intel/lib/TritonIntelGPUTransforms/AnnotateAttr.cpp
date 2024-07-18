@@ -1,4 +1,4 @@
-//===- AttrAnnotate.cpp - annotate with layout attribute -*-C++ -*-===//
+//===- AnnotateAttr.cpp - annotate with layout attribute -*-C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -29,7 +29,7 @@ namespace ttg = mlir::triton::gpu;
 namespace ttgi = mlir::triton::gpu::intel;
 
 namespace mlir::triton::gpu::intel {
-#define GEN_PASS_DEF_TRITONINTELGPUATTRANNOTATE
+#define GEN_PASS_DEF_TRITONINTELGPUANNOTATEATTR
 #include "intel/include/Dialect/TritonIntelGPU/Transforms/Passes.h.inc"
 } // namespace mlir::triton::gpu::intel
 
@@ -42,9 +42,9 @@ static void addNamedAttrs(Operation *op, DictionaryAttr dictAttrs) {
 }
 } // namespace
 
-class TritonIntelGPUAttrAnnotatePass
-    : public triton::gpu::intel::impl::TritonIntelGPUAttrAnnotateBase<
-          TritonIntelGPUAttrAnnotatePass> {
+class TritonIntelGPUAnnotateAttrPass
+    : public triton::gpu::intel::impl::TritonIntelGPUAnnotateAttrBase<
+          TritonIntelGPUAnnotateAttrPass> {
 private:
   DenseMap<Value, Attribute> valueAttrMap;
   Dialect *arithDialect = nullptr;
