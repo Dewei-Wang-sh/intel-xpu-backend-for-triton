@@ -172,7 +172,12 @@ public:
           // warp 0 load values from slm
           auto cmp = b.create<arith::CmpIOp>(loc, arith::CmpIPredicate::eq,
                                              warpId, cst0);
-          auto ifOp = b.create<scf::IfOp>(loc, cmp, false);
+          scf::IfOp ifOp;
+          bool broadcast = reduce.getBroadcast();
+          if (broadcast)
+            ifOp = b.create<scf::IfOp>(loc, cmp, false);
+          else
+            ifOp = b.create<scf::IfOp>(loc, tType, cmp, true /*hasElse*/);
           {
             OpBuilder::InsertionGuard guard(b);
             b.setInsertionPointToStart(ifOp.getBody());
@@ -208,47 +213,89 @@ public:
             }
             // warp 0 store value to slm_base
             if (numElms == 1) {
-              auto redCast =
+              Value redCast =
                   b.create<tt::BitcastOp>(loc, elmTy, subRed.getResult()[0]);
               b.create<tt::StoreOp>(loc, base, redCast, tt::CacheModifier::NONE,
                                     tt::EvictionPolicy::NORMAL);
             } else {
-              auto redCast =
+              Value redCast =
                   b.create<tt::BitcastOp>(loc, tType, subRed.getResult()[0]);
-              b.create<tt::StoreOp>(loc, warp0Ptr, redCast,
-                                    tt::CacheModifier::NONE,
-                                    tt::EvictionPolicy::NORMAL);
+              if (broadcast) {
+                b.create<tt::StoreOp>(loc, warp0Ptr, redCast,
+                                      tt::CacheModifier::NONE,
+                                      tt::EvictionPolicy::NORMAL);
+              } else {
+                b.create<scf::YieldOp>(loc, redCast);
+                b.setInsertionPointToStart(&ifOp.getElseRegion().front());
+                mlir::Attribute zeroAttr =
+                    b.getZeroAttr(tType.getElementType());
+                auto val = DenseElementsAttr::get(cast<mlir::ShapedType>(tType),
+                                                  zeroAttr);
+                Value zero = b.create<arith::ConstantOp>(loc, tType, val);
+                b.create<scf::YieldOp>(loc, zero);
+                // auto yield =
+                //     cast<scf::YieldOp>(ifOp.getBody()->getTerminator());
+                // yield.getResultsMutable().assign({redCast});
+              }
             }
           }
-          // barrier
-          b.create<mlir::gpu::BarrierOp>(loc);
-          // each warp load value from slm_base
-          Value load;
-          if (numElms == 1) {
-            load = b.create<tt::LoadOp>(loc, base, tt::CacheModifier::NONE,
-                                        tt::EvictionPolicy::NORMAL, false);
-            load = b.create<tt::BitcastOp>(loc, tType, load);
-          } else {
-            load = b.create<tt::LoadOp>(loc, warp0Ptr, tt::CacheModifier::NONE,
-                                        tt::EvictionPolicy::NORMAL, false);
+          // each warp get the reduction value
+          if (broadcast) {
+            // barrier
+            b.create<mlir::gpu::BarrierOp>(loc);
+            // each warp load value from slm_base
+            Value load;
+            if (numElms == 1) {
+              load = b.create<tt::LoadOp>(loc, base, tt::CacheModifier::NONE,
+                                          tt::EvictionPolicy::NORMAL, false);
+              load = b.create<tt::BitcastOp>(loc, tType, load);
+            } else {
+              load =
+                  b.create<tt::LoadOp>(loc, warp0Ptr, tt::CacheModifier::NONE,
+                                       tt::EvictionPolicy::NORMAL, false);
+            }
+            result.replaceAllUsesWith(load);
           }
-          result.replaceAllUsesWith(load);
+          // do not need broadcast to each warp
+          else {
+            result.replaceAllUsesWith(ifOp.getResults().front());
+          }
           // update base
-          auto size = b.create<arith::ConstantIntOp>(loc, numElms, 32);
+          auto size =
+              b.create<arith::ConstantIntOp>(loc, numElms * numWarps, 32);
           base = b.create<tt::AddPtrOp>(loc, base.getType(), base, size);
         }
         op->erase();
       }
 
-      // move load into if
+      // merge scf.if
       func.walk<WalkOrder::PreOrder>([&](tt::StoreOp op) {
-        if (isa<scf::IfOp>(op->getParentOp())) {
-          auto def = op.getValue().getDefiningOp();
-          if (def->getParentOp() != op->getParentOp()) {
-            def->moveBefore(op);
+        if (auto parent = dyn_cast<scf::IfOp>(op->getParentOp())) {
+          auto def = dyn_cast<scf::IfOp>(op.getValue().getDefiningOp());
+          // if (def && parent.getCondition() == def.getCondition())
+          if (def) {
+            Block *currBody = parent.getBody();
+            Block *body = def.getBody();
+            Value src =
+                cast<scf::YieldOp>(body->getTerminator()).getResults().front();
+            body->getTerminator()->erase();
+            currBody->getOperations().splice(currBody->begin(),
+                                             body->getOperations());
+            op.getValue().replaceAllUsesWith(src);
+            def->erase();
           }
         }
       });
+
+      // // move load into if
+      // func.walk<WalkOrder::PreOrder>([&](tt::StoreOp op) {
+      //   if (isa<scf::IfOp>(op->getParentOp())) {
+      //     auto def = op.getValue().getDefiningOp();
+      //     if (def->getParentOp() != op->getParentOp()) {
+      //       def->moveBefore(op);
+      //     }
+      //   }
+      // });
     }
   }
 };
