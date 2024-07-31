@@ -561,6 +561,7 @@ class JITFunction(KernelInterface[T]):
             'device': device,
             'constants': constants,
             'num_warps': options.num_warps,
+            'warp_level': options.warp_level,
             'num_ctas': options.num_ctas,
             'num_stages': options.num_stages,
             'enable_fp_fusion': options.enable_fp_fusion,

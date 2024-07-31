@@ -83,6 +83,7 @@ def TT_BitcastOp : TT_Op<"bitcast", [//Elementwise,
 
     let assemblyFormat = "$src attr-dict `:` type($src) `->` type($result)";
 
+    // let hasFolder = 1;
     // TODO: Add verifier
 }
 
@@ -1175,7 +1176,7 @@ def TT_AllReduceOp: TT_Op<"all_reduce",
                        [Pure, // MemWrite, MemRead,
                         SameOperandsAndResultType]> {
     let summary = "reduce src among workgroup";
-    let arguments = (ins AnyTypeOf<[TT_FloatLike, TT_IntLike]>:$src, TT_AtomicRMWAttr:$combine);
+    let arguments = (ins AnyTypeOf<[TT_FloatLike, TT_IntLike]>:$src, TT_AtomicRMWAttr:$combine, DefaultValuedAttr<BoolAttr, "true">:$broadcast);
     let results =  (outs AnyTypeOf<[TT_FloatLike, TT_IntLike]>:$result);
     let assemblyFormat = "$src $combine attr-dict `:` type($src)";
 }

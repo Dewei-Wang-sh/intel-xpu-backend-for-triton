@@ -210,6 +210,12 @@ void init_triton_ir(py::module &&m) {
       .value("IEEE", InputPrecision::IEEE)
       .export_values();
 
+  py::enum_<Tiling>(m, "TILING", py::module_local())
+      .value("HORIZONTAL", Tiling::HORIZONTAL)
+      .value("VERTICAL", Tiling::VERTICAL)
+      .value("SQUARE", Tiling::SQUARE)
+      .export_values();
+
   py::class_<MLIRContext>(m, "context", py::module_local()).def(py::init<>());
 
   m.def("load_dialects", [](MLIRContext &context) {
@@ -1415,9 +1421,14 @@ void init_triton_ir(py::module &&m) {
       .def("create_dot",
            [](TritonOpBuilder &self, mlir::Value &a, mlir::Value &b,
               mlir::Value &c, InputPrecision inputPrecision,
-              int maxNumImpreciseAcc) -> mlir::Value {
-             return self.create<DotOp>(c.getType(), a, b, c, inputPrecision,
-                                       maxNumImpreciseAcc);
+              int maxNumImpreciseAcc, Tiling tiling) -> mlir::Value {
+             auto dot = self.create<DotOp>(c.getType(), a, b, c, inputPrecision,
+                                           maxNumImpreciseAcc);
+             if (tiling != Tiling::SQUARE)
+               dot->setAttr(
+                   "Tiling",
+                   TilingAttr::get(self.getBuilder().getContext(), tiling));
+             return dot;
            })
       .def("create_floor",
            [](TritonOpBuilder &self, Value &val) -> Value {
@@ -1576,8 +1587,9 @@ void init_triton_ir(py::module &&m) {
              return self.create<AllocOp>(type);
            })
       .def("create_all_reduce",
-           [](TritonOpBuilder &self, Value &src, RMWOp combine) -> Value {
-             return self.create<AllReduceOp>(src, combine);
+           [](TritonOpBuilder &self, Value &src, RMWOp combine,
+              bool broadcast) -> Value {
+             return self.create<AllReduceOp>(src, combine, broadcast);
            });
 
   py::class_<PassManager>(m, "pass_manager", py::module_local())

@@ -73,7 +73,7 @@ public:
       tt::DotOp dot;
       bool found = false;
       func.walk([&](tt::DotOp op) {
-        if (op->hasAttr("tiling") && found == false) {
+        if (op->hasAttr("Tiling") && found == false) {
           dot = op;
           found = true;
         }

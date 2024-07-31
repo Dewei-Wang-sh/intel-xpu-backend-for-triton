@@ -167,7 +167,7 @@ def _elementwise_max(a, b):
 @jit
 @core._add_reduction_docstr("maximum", return_indices_arg="return_indices",
                             tie_break_arg="return_indices_tie_break_left")
-def max(input, axis=None, return_indices=False, return_indices_tie_break_left=True, keep_dims=False, cross_warp=False):
+def max(input, axis=None, return_indices=False, return_indices_tie_break_left=True, keep_dims=False, cross_warp=False, broadcast=True):
     input = core._promote_bfloat16_to_float32(input)
     if return_indices:
         if return_indices_tie_break_left:
@@ -182,7 +182,7 @@ def max(input, axis=None, return_indices=False, return_indices_tie_break_left=Tr
                 assert input.dtype.is_int(), "Expecting input to be integer type"
                 input = input.to(core.int32)
         # combine_op : str = "max" if cross_warp else "add"
-        return core.reduce(input, axis, _elementwise_max, keep_dims=keep_dims, combine_op="max", cross_warp=cross_warp)
+        return core.reduce(input, axis, _elementwise_max, keep_dims=keep_dims, combine_op="max", cross_warp=cross_warp, broadcast=broadcast)
 
 
 @core._tensor_member_fn
@@ -263,9 +263,9 @@ def _sum_combine(a, b):
 @core._tensor_member_fn
 @jit
 @core._add_reduction_docstr("sum")
-def sum(input, axis=None, keep_dims=False, cross_warp=False):
+def sum(input, axis=None, keep_dims=False, cross_warp=False, broadcast=True):
     input = core._promote_bfloat16_to_float32(input)
-    return core.reduce(input, axis, _sum_combine, keep_dims=keep_dims, combine_op="add", cross_warp=cross_warp)
+    return core.reduce(input, axis, _sum_combine, keep_dims=keep_dims, combine_op="add", cross_warp=cross_warp, broadcast=broadcast)
 
 
 @jit

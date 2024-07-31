@@ -1317,9 +1317,12 @@ def _str_to_dot_input_precision(input_precision, builder):
         input_precision = "TF32x3"
     return getattr(ir.INPUT_PRECISION, input_precision)
 
+def _str_to_dot_tiling(tiling):
+    tiling = tiling.upper() if tiling is not None else "SQUARE"
+    return getattr(ir.TILING, tiling)
 
 def dot(lhs: tl.tensor, rhs: tl.tensor, acc: tl.tensor, input_precision: Optional[str], max_num_imprecise_acc: int,
-        out_dtype: tl.dtype, builder: ir.builder) -> tl.tensor:
+        out_dtype: tl.dtype, tiling: Optional[str], builder: ir.builder) -> tl.tensor:
 
     def assert_dtypes_valid(lhs_dtype, rhs_dtype, options):
         if not options.allow_fp8e4nv:
@@ -1405,7 +1408,8 @@ def dot(lhs: tl.tensor, rhs: tl.tensor, acc: tl.tensor, input_precision: Optiona
         else:
             max_num_imprecise_acc = 0
 
-    return tl.tensor(builder.create_dot(lhs.handle, rhs.handle, acc_handle, input_precision, max_num_imprecise_acc),
+    tiling = _str_to_dot_tiling(tiling)
+    return tl.tensor(builder.create_dot(lhs.handle, rhs.handle, acc_handle, input_precision, max_num_imprecise_acc, tiling),
                      ret_ty)
 
 
@@ -1459,7 +1463,7 @@ def reduction(inputs: Sequence[tl.tensor], axis: int, region_builder_fn, builder
 
     return tuple(wrap_tensor(reduce_op.get_result(i), inputs[i].type.scalar, ret_shape) for i in range(len(inputs)))
 
-def all_reduction(input: tl.tensor, combine_op: str, builder: ir.builder) -> tl.tensor:
+def all_reduction(input: tl.tensor, combine_op: str, broadcast: bool, builder: ir.builder) -> tl.tensor:
     # combine = _str_to_combine(combine_op)
     sca_ty = input.type.scalar
     if combine_op == 'max':
@@ -1468,7 +1472,7 @@ def all_reduction(input: tl.tensor, combine_op: str, builder: ir.builder) -> tl.
         combine = ir.ATOMIC_OP.FADD if sca_ty.is_floating() else ir.ATOMIC_OP.ADD
     else:
         raise TypeError(f"unexpected type {combine_op}")
-    handle = builder.create_all_reduce(input.handle, combine)
+    handle = builder.create_all_reduce(input.handle, combine, broadcast)
     return tl.tensor(handle, input.type)
 
 # ===----------------------------------------------------------------------===

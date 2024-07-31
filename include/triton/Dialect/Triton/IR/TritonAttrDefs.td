@@ -118,6 +118,17 @@ def TT_InputPrecisionAttr : I32EnumAttr<
   let cppNamespace = "::mlir::triton";
 }
 
+// Tiling
+def TT_TilingAttr : I32EnumAttr<
+    "Tiling", "",
+    [
+      I32EnumAttrCase<"SQUARE", 0, "square">,
+      I32EnumAttrCase<"HORIZONTAL", 1, "horizontal">,
+      I32EnumAttrCase<"VERTICAL", 2, "vectical">
+    ]>{
+  let cppNamespace = "::mlir::triton";
+}
+
 // // reduce operation
 // def TT_CombineOpAttr : I32EnumAttr<
 //     "CombineOp", "",

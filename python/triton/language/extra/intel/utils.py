@@ -22,6 +22,10 @@ def num_threads(_builder=None):
 def num_warps(_builder=None):
     return core.constexpr(_builder.options.num_warps)
 
+@core.builtin
+def warp_level(_builder=None):
+    return core.constexpr(_builder.options.warp_level)
+
 
 def convert_fp8e4b15_to_float16(arg, _builder):
     # Need to bitcast the source first because it's represented as tensor of i8 in MLIR.

@@ -108,7 +108,7 @@ if __name__ == "__main__":
     for i in equal_to_1:
         constants.update({i: 1})
     src = triton.compiler.ASTSource(fn=kernel, constants=constants, signature=signature, attrs=attrs)
-    opts = {"num_warps": args.num_warps, "num_stages": args.num_stages}
+    opts = {"num_warps": args.num_warps, "warp_level": args.warp_level, "num_stages": args.num_stages}
     ccinfo = triton.compile(src, options=opts)
     arg_names = []
     arg_types = []

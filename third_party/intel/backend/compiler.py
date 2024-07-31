@@ -34,6 +34,7 @@ def _path_to_binary(binary: str):
 @dataclass(frozen=True)
 class XPUOptions:
     num_warps: int = 4
+    warp_level: bool = False
     num_ctas: int = 1
     num_stages: int = 2
     cluster_dims: tuple = (1, 1, 1)
@@ -88,6 +89,8 @@ class XPUBackend(BaseBackend):
             pm = ir.pass_manager(mod.context)
             pm.enable_debug()
 
+            if opt.warp_level:
+                print("now in the warp-level kernel")
             intel.passes.ttir.add_convert_to_ttgpuir_warp(pm, opt.num_warps)
             # FIXME: Use a better way to check if prefetch instructions are supported once available.
             # Prefetch instruction is not available in older drivers.
