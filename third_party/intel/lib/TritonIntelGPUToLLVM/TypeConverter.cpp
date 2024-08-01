@@ -7,6 +7,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "intel/include/TritonIntelGPUToLLVM/TypeConverter.h"
+#include "intel/include/Dialect/TritonIntelGPU/IR/Attributes.h"
 #include "triton/Tools/Sys/GetEnv.hpp"
 
 using namespace mlir;
@@ -34,8 +35,10 @@ TritonIntelGPUToLLVMTypeConverter::TritonIntelGPUToLLVMTypeConverter(
       unsigned num = type.getNumElements();
       Type elmTy = type.getElementType();
       if (!type.getEncoding() ||
-          isa<mlir::triton::gpu::DotOperandEncodingAttr>(type.getEncoding()))
-        num /= 16;
+          isa<mlir::triton::gpu::DotOperandEncodingAttr,
+              mlir::triton::gpu::intel::WarpEncodingAttr>(type.getEncoding()))
+        if (num >= 16)
+          num /= 16;
       if (auto encoding = type.getEncoding()) {
         if (auto attr =
                 dyn_cast<mlir::triton::gpu::SliceEncodingAttr>(encoding)) {

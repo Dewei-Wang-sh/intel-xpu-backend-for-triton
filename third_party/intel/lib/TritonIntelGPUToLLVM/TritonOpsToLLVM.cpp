@@ -118,8 +118,98 @@ public:
   LogicalResult
   matchAndRewrite(OpType op, typename OpType::Adaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
+    MLIRContext *ctx = rewriter.getContext();
+    Location loc = op.getLoc();
     auto ptrType = cast<PointerType>(op.getPtr().getType());
+
+    // scalar
+    if (!isa<RankedTensorType>(ptrType.getPointeeType())) {
+      Value load = load(ptrType.getPointeeType(), adaptor.getPtr());
+      rewriter.replaceOp(op, load);
+      return success();
+    }
     auto tensorType = cast<RankedTensorType>(ptrType.getPointeeType());
+
+    // for paged attention
+    auto rank = tensorType.getRank();
+    auto shape = tensorType.getShape();
+    auto addrSpace = ptrType.getAddressSpace();
+    // 1D lsc
+    if ((rank == 1 && shape[0] != 1) ||
+        (rank == 2 && (shape[0] == 1 || shape[1] == 1)) || addrSpace == 3) {
+      auto moduleOp =
+          rewriter.getBlock()->getParent()->getParentOfType<ModuleOp>();
+      // get base
+      MakeTensorPtrOp ptrOp = getMakeTensorPtrOp(ptr);
+      Value base = ptrOp.getBase();
+      if (auto cast =
+              dyn_cast<mlir::UnrealizedConversionCastOp>(base.getDefiningOp()))
+        base = cast.getInputs()[0];
+      else
+        base = rewriter.getRemappedValue(base);
+
+      Type valTy;
+      if constexpr (std::is_same_v<OpType, LoadOp>) {
+        valType =
+            this->getTypeConverter()->convertType(op->getResult(0).getType());
+      } else if constexpr (std::is_same_v<OpType, StoreOp>) {
+        valTy = adaptor.getValue().getType();
+      }
+      VectorType vecTy = cast<VectorType>(valTy);
+
+      // make it simple for now
+      // SmallVector<OpFoldResult> rawOffsets = ptrOp.getOffsets();
+      // auto offsets = getConstantIntValues(rawOffsets);
+      if (rank == 2) {
+        Value row = ptrOp.getOffsets()[0];
+        auto cst0 = getConstantIntValue(row);
+        Value stride = ptrOp.getStrides()[0];
+        auto cst1 = getConstantIntValue(stride).value();
+        if (!cst0.has_value()) {
+          Value offset = mul(row, i32_val(cst1));
+          base = gep(base.getType(), vecTy.getElementType(), base, offset);
+        } else if (cst0.value() != 0) {
+          Value offset = i32_val(cst0.value() * cst1) base =
+              gep(base.getType(), vecTy.getElementType(), base, offset);
+        }
+      }
+
+      if constexpr (std::is_same_v<OpType, LoadOp>) {
+        // Type resType =
+        //     this->getTypeConverter()->convertType(op->getResult(0).getType());
+        // VectorType vecTy = cast<VectorType>(resType);
+        Type intTy = vecTy.getElementTypeBitWidth() == 16 ? i16_ty : i32_ty;
+        VectorType vecIntTy = VectorType::get(vecTy.getNumElements(), intTy);
+        auto addrSpace = ptrType.getAddressSpace();
+
+        // create intrinsic
+        constexpr char funcName[] = "llvm.genx.GenISA.simdBlockRead";
+        SmallVector<Type> argTypes{base.getType()};
+        LLVM::LLVMFuncOp funcOp =
+            LLVM::lookupOrCreateFn(moduleOp, funcName, argTypes, vecIntTy);
+        funcOp.setCConv(LLVM::cconv::CConv::SPIR_FUNC);
+        SmallVector<Value> args{base};
+        LLVM::CallOp load = call(funcOp, args);
+        rewriter.replaceOp(op, bitcast(load.getResult(), vecTy));
+      } else if constexpr (std::is_same_v<OpType, StoreOp>) {
+        // VectorType vecTy = cast<VectorType>(adaptor.getValue().getType());
+        Type intTy = vecTy.getElementTypeBitWidth() == 16 ? i16_ty : i32_ty;
+        VectorType vecIntTy = VectorType::get(vecTy.getNumElements(), intTy);
+        // create intrinsic
+        constexpr char funcName[] = "llvm.genx.GenISA.simdBlockWrite";
+        SmallVector<Type> argTypes{base.getType(), vecIntTy};
+        LLVM::LLVMVoidType voidTy = void_ty(ctx);
+        LLVM::LLVMFuncOp funcOp =
+            LLVM::lookupOrCreateFn(moduleOp, funcName, argTypes, voidTy);
+        funcOp.setCConv(LLVM::cconv::CConv::SPIR_FUNC);
+        SmallVector<Value> args{base, bitcast(adaptor.getValue(), vecIntTy)};
+        call(funcOp, args);
+        rewriter.eraseOp(op);
+      }
+      return success();
+    }
+
+    // slm
     auto addrSpace = ptrType.getAddressSpace();
     const bool isLocalSpace = (addrSpace == 3);
     auto moduleOp =
@@ -148,7 +238,6 @@ public:
 
     OpBuilder::InsertPoint insertPoint = rewriter.saveInsertionPoint();
     rewriter.setInsertionPointAfter(ptrOp);
-    Location loc = op.getLoc();
     bool transpose = ptrOp.getOrder()[0] == 0;
     Value bytes =
         i32_val(tensorType.getElementType().getIntOrFloatBitWidth() / 8);
@@ -383,13 +472,15 @@ public:
         TritonGEN::PrecisionTypeAttr::get(rewriter.getContext(), precBTy);
 
     Location loc = op.getLoc();
-    Type typeA =
+    VectorType typeA =
         getVectorType(cast<RankedTensorType>(op.getA().getType()), i16_ty);
     Value castA = bitcast(adaptor.getA(), typeA);
     VectorType typeB =
         getVectorType(cast<RankedTensorType>(op.getB().getType()), i32_ty);
     Value castB = bitcast(adaptor.getB(), typeB);
-    auto rc = IntegerAttr::get(i32_ty, 8);
+    unsigned count = 8;
+    count = typeA.getNumElements();
+    auto rc = IntegerAttr::get(i32_ty, count);
     // sd dpasW fixed in genx.dpas lowering.
     rewriter.replaceOpWithNewOp<TritonGEN::MatrixDPASOp>(
         op, adaptor.getC().getType(), adaptor.getC(), castA, castB, precA,
@@ -661,10 +752,16 @@ public:
     if (isa<triton::PointerType>(op.getType())) {
       Location loc = op->getLoc();
       Type dstType = getTypeConverter()->convertType(op.getType());
-      auto newOp =
-          rewriter.create<LLVM::BitcastOp>(loc, dstType, adaptor.getSrc());
-      rewriter.replaceOp(op, newOp);
-      return success();
+      if (dstType == adaptor.getSrc().getType()) {
+        auto src = adaptor.getSrc();
+        rewriter.replaceOp(op, src);
+        return success();
+      } else {
+        auto newOp =
+            rewriter.create<LLVM::BitcastOp>(loc, dstType, adaptor.getSrc());
+        rewriter.replaceOp(op, newOp);
+        return success();
+      }
     }
     // keep it simple for now
     auto src = adaptor.getSrc();
