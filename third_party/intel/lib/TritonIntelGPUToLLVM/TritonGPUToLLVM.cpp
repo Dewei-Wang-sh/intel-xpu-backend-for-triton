@@ -82,10 +82,11 @@ struct ConvertTritonGPUToLLVM
     int threadsPerWarp = triton::gpu::TritonGPUDialect::getThreadsPerWarp(mod);
 
     // fixed 0 for now
+    // 6482 + 16*4 + 16*4 + 16*64*4 = 4352
     if (pipelineManager.skipSharedMemoryAllocation()) {
       mod->setAttr(
           "triton_gpu.shared",
-          mlir::IntegerAttr::get(mlir::IntegerType::get(context, 32), 0));
+          mlir::IntegerAttr::get(mlir::IntegerType::get(context, 32), 4608));
     } else {
       // Allocate shared memory and set barrier
       ModuleAllocation allocation(mod);

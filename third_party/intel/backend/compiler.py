@@ -91,19 +91,22 @@ class XPUBackend(BaseBackend):
 
             if opt.warp_level:
                 print("now in the warp-level kernel")
-            intel.passes.ttir.add_convert_to_ttgpuir_warp(pm, opt.num_warps)
-            # FIXME: Use a better way to check if prefetch instructions are supported once available.
-            # Prefetch instruction is not available in older drivers.
-            # if Version(metadata["target"].arch['driver_version']) > Version("1.3.28202"):
-            inject_split_barriers = False
-            intel.passes.ttgpuir.add_prefetch_block(pm, opt.num_stages, inject_split_barriers)
-            intel.passes.ttgpuir.add_distribute_to_warps(pm)
+                intel.passes.ttir.annotate_attr(pm)
+                intel.passes.ttir.expand_slm(pm)
+            else:
+                intel.passes.ttir.add_convert_to_ttgpuir_warp(pm, opt.num_warps)
+                # FIXME: Use a better way to check if prefetch instructions are supported once available.
+                # Prefetch instruction is not available in older drivers.
+                # if Version(metadata["target"].arch['driver_version']) > Version("1.3.28202"):
+                inject_split_barriers = False
+                intel.passes.ttgpuir.add_prefetch_block(pm, opt.num_stages, inject_split_barriers)
+                intel.passes.ttgpuir.add_distribute_to_warps(pm)
             passes.common.add_canonicalizer(pm)
             passes.common.add_cse(pm)
             intel.passes.ttgpuir.add_match_target_size(pm)
             passes.common.add_canonicalizer(pm)
             passes.common.add_cse(pm)
-            intel.passes.ttgpuir.add_schedule_load(pm)
+            # intel.passes.ttgpuir.add_schedule_load(pm)
             passes.common.add_symbol_dce(pm)
             pm.run(mod)
             return mod

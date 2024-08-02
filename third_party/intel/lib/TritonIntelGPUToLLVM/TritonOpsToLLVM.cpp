@@ -121,11 +121,20 @@ public:
     MLIRContext *ctx = rewriter.getContext();
     Location loc = op.getLoc();
     auto ptrType = cast<PointerType>(op.getPtr().getType());
+    Value ptr = op.getPtr();
+    if (auto cast =
+            dyn_cast<mlir::UnrealizedConversionCastOp>(ptr.getDefiningOp()))
+      ptr = cast.getInputs()[0];
 
     // scalar
     if (!isa<RankedTensorType>(ptrType.getPointeeType())) {
-      Value load = load(ptrType.getPointeeType(), adaptor.getPtr());
-      rewriter.replaceOp(op, load);
+      if constexpr (std::is_same_v<OpType, LoadOp>) {
+        Value load = load(ptrType.getPointeeType(), adaptor.getPtr());
+        rewriter.replaceOp(op, load);
+      } else if constexpr (std::is_same_v<OpType, StoreOp>) {
+        store(adaptor.getValue(), adaptor.getPtr());
+        rewriter.eraseOp(op);
+      }
       return success();
     }
     auto tensorType = cast<RankedTensorType>(ptrType.getPointeeType());
@@ -150,11 +159,60 @@ public:
 
       Type valTy;
       if constexpr (std::is_same_v<OpType, LoadOp>) {
-        valType =
+        valTy =
             this->getTypeConverter()->convertType(op->getResult(0).getType());
       } else if constexpr (std::is_same_v<OpType, StoreOp>) {
         valTy = adaptor.getValue().getType();
       }
+      //
+      // VectorType vecTy;
+      // if (!isa<VectorType>(valTy)) {
+      //   vecTy = VectorType::get(1, valTy);
+      // } else {
+      //   vecTy = cast<VectorType>(valTy);
+      // }
+      if (!isa<VectorType>(valTy)) {
+        if constexpr (std::is_same_v<OpType, LoadOp>) {
+          Type intTy = valTy.getIntOrFloatBitWidth() == 16 ? i16_ty : i32_ty;
+          // llvm::LLVMContext llvmContext;
+          // LLVM::TypeToLLVMIRTranslator typeTranslator(llvmContext);
+          // auto llvmResTy = typeTranslator.translateType(intTy);
+          // auto llvmPtrTy = typeTranslator.translateType(base.getType());
+          // SmallVector<llvm::Type *> llvmTypes{llvmResTy, llvmPtrTy};
+          // std::string funcName = llvm::GenISAIntrinsic::getName(
+          //     llvm::GenISAIntrinsic::GenISA_simdBlockRead, llvmTypes);
+          assert(valTy == f32_ty);
+          assert(addrSpace == 3);
+          constexpr char funcName[] = "llvm.genx.GenISA.simdBlockRead.f32.p3";
+          SmallVector<Type> argTypes{base.getType()};
+          LLVM::LLVMFuncOp funcOp =
+              LLVM::lookupOrCreateFn(moduleOp, funcName, argTypes, intTy);
+          funcOp.setCConv(LLVM::cconv::CConv::SPIR_FUNC);
+          SmallVector<Value> args{base};
+          LLVM::CallOp load = call(funcOp, args);
+          rewriter.replaceOp(op, bitcast(load.getResult(), valTy));
+        } else if constexpr (std::is_same_v<OpType, StoreOp>) {
+          Type intTy = valTy.getIntOrFloatBitWidth() == 16 ? i16_ty : i32_ty;
+          // llvm::LLVMContext llvmContext;
+          // LLVM::TypeToLLVMIRTranslator typeTranslator(llvmContext);
+          // auto llvmPtrTy = typeTranslator.translateType(base.getType());
+          // auto llvmValTy = typeTranslator.translateType(intTy);
+          // SmallVector<llvm::Type *> llvmTypes{llvmPtrTy, llvmValTy};
+          // std::string funcName = llvm::GenISAIntrinsic::getName(
+          //     llvm::GenISAIntrinsic::GenISA_simdBlockWrite, llvmTypes);
+          constexpr char funcName[] = "llvm.genx.GenISA.simdBlockWrite";
+          SmallVector<Type> argTypes{base.getType(), intTy};
+          LLVM::LLVMVoidType voidTy = void_ty(ctx);
+          LLVM::LLVMFuncOp funcOp =
+              LLVM::lookupOrCreateFn(moduleOp, funcName, argTypes, voidTy);
+          funcOp.setCConv(LLVM::cconv::CConv::SPIR_FUNC);
+          SmallVector<Value> args{base, bitcast(adaptor.getValue(), intTy)};
+          auto store = call(funcOp, args);
+          rewriter.eraseOp(op);
+        }
+        return success();
+      }
+
       VectorType vecTy = cast<VectorType>(valTy);
 
       // make it simple for now
@@ -169,8 +227,8 @@ public:
           Value offset = mul(row, i32_val(cst1));
           base = gep(base.getType(), vecTy.getElementType(), base, offset);
         } else if (cst0.value() != 0) {
-          Value offset = i32_val(cst0.value() * cst1) base =
-              gep(base.getType(), vecTy.getElementType(), base, offset);
+          Value offset = i32_val(cst0.value() * cst1);
+          base = gep(base.getType(), vecTy.getElementType(), base, offset);
         }
       }
 
@@ -180,10 +238,25 @@ public:
         // VectorType vecTy = cast<VectorType>(resType);
         Type intTy = vecTy.getElementTypeBitWidth() == 16 ? i16_ty : i32_ty;
         VectorType vecIntTy = VectorType::get(vecTy.getNumElements(), intTy);
-        auto addrSpace = ptrType.getAddressSpace();
 
         // create intrinsic
-        constexpr char funcName[] = "llvm.genx.GenISA.simdBlockRead";
+        // llvm::LLVMContext llvmContext;
+        // LLVM::TypeToLLVMIRTranslator typeTranslator(llvmContext);
+        // auto llvmResTy = typeTranslator.translateType(vecIntTy);
+        // auto llvmPtrTy = typeTranslator.translateType(base.getType());
+        // SmallVector<llvm::Type *> llvmTypes{llvmResTy, llvmPtrTy};
+        // std::string funcName = llvm::GenISAIntrinsic::getName(
+        //     llvm::GenISAIntrinsic::GenISA_simdBlockRead, llvmTypes);
+        std::string funcName = "llvm.genx.GenISA.simdBlockRead";
+        if (intTy == i16_ty)
+          funcName += ".v4i16";
+        else
+          funcName += ".v4i32";
+        if (addrSpace == 3)
+          funcName += ".p3";
+        else
+          funcName += ".p1i32";
+
         SmallVector<Type> argTypes{base.getType()};
         LLVM::LLVMFuncOp funcOp =
             LLVM::lookupOrCreateFn(moduleOp, funcName, argTypes, vecIntTy);
@@ -196,21 +269,36 @@ public:
         Type intTy = vecTy.getElementTypeBitWidth() == 16 ? i16_ty : i32_ty;
         VectorType vecIntTy = VectorType::get(vecTy.getNumElements(), intTy);
         // create intrinsic
-        constexpr char funcName[] = "llvm.genx.GenISA.simdBlockWrite";
+        // llvm::LLVMContext llvmContext;
+        // LLVM::TypeToLLVMIRTranslator typeTranslator(llvmContext);
+        // auto llvmPtrTy = typeTranslator.translateType(base.getType());
+        // auto llvmValTy = typeTranslator.translateType(vecIntTy);
+        // SmallVector<llvm::Type *> llvmTypes{llvmPtrTy, llvmValTy};
+        // std::string funcName = llvm::GenISAIntrinsic::getName(
+        //     llvm::GenISAIntrinsic::GenISA_simdBlockWrite, llvmTypes);
+        std::string funcName = "llvm.genx.GenISA.simdBlockWrite";
+        if (intTy == i16_ty)
+          funcName += ".v4i16";
+        else
+          funcName += ".v4i32";
+        if (addrSpace == 3)
+          funcName += ".p3";
+        else
+          funcName += ".p1i32";
         SmallVector<Type> argTypes{base.getType(), vecIntTy};
         LLVM::LLVMVoidType voidTy = void_ty(ctx);
         LLVM::LLVMFuncOp funcOp =
             LLVM::lookupOrCreateFn(moduleOp, funcName, argTypes, voidTy);
         funcOp.setCConv(LLVM::cconv::CConv::SPIR_FUNC);
         SmallVector<Value> args{base, bitcast(adaptor.getValue(), vecIntTy)};
-        call(funcOp, args);
+        auto store = call(funcOp, args);
         rewriter.eraseOp(op);
       }
       return success();
     }
 
     // slm
-    auto addrSpace = ptrType.getAddressSpace();
+    // auto addrSpace = ptrType.getAddressSpace();
     const bool isLocalSpace = (addrSpace == 3);
     auto moduleOp =
         rewriter.getBlock()->getParent()->getParentOfType<ModuleOp>();
@@ -223,10 +311,6 @@ public:
     unsigned vBlks = blockWidth == 32 ? 2 : 1;
     blockWidth = 16;
     unsigned blockHeight = tensorType.getShape()[0];
-    Value ptr = op.getPtr();
-    if (auto cast =
-            dyn_cast<mlir::UnrealizedConversionCastOp>(ptr.getDefiningOp()))
-      ptr = cast.getInputs()[0];
 
     MakeTensorPtrOp ptrOp = getMakeTensorPtrOp(ptr);
     Value base = ptrOp.getBase();
@@ -482,9 +566,14 @@ public:
     count = typeA.getNumElements();
     auto rc = IntegerAttr::get(i32_ty, count);
     // sd dpasW fixed in genx.dpas lowering.
-    rewriter.replaceOpWithNewOp<TritonGEN::MatrixDPASOp>(
-        op, adaptor.getC().getType(), adaptor.getC(), castA, castB, precA,
-        precB, rc);
+    VectorType typeC =
+        getVectorType(cast<RankedTensorType>(op.getC().getType()), f32_ty);
+    Value castC = bitcast(adaptor.getC(), typeC);
+    Value dpas = rewriter.create<TritonGEN::MatrixDPASOp>(
+        loc, typeC, castC, castA, castB, precA, precB, rc);
+    rewriter.replaceOp(op, bitcast(dpas, adaptor.getC().getType()));
+    // rewriter.replaceOpWithNewOp<TritonGEN::MatrixDPASOp>(
+    //     op, typeC, castC, castA, castB, precA, precB, rc);
     return success();
   }
 };
@@ -501,55 +590,69 @@ public:
                   ConversionPatternRewriter &rewriter) const override {
     Location loc = op.getLoc();
     SmallVector<Value> operands = adaptor.getOperands();
-    auto dstType =
-        cast<VectorType>(getTypeConverter()->convertType(op.getType()));
-    unsigned numElts = dstType.getNumElements();
-    SmallVector<int32_t> indices(numElts);
-    std::iota(indices.begin(), indices.end(), 0);
-    DenseI32ArrayAttr attr = rewriter.getDenseI32ArrayAttr(indices);
+    auto type = getTypeConverter()->convertType(op.getType());
+    if (auto dstType = dyn_cast<VectorType>(type)) {
+      unsigned numElts = dstType.getNumElements();
+      SmallVector<int32_t> indices(numElts);
+      std::iota(indices.begin(), indices.end(), 0);
+      DenseI32ArrayAttr attr = rewriter.getDenseI32ArrayAttr(indices);
 
-    switch (operands.size()) {
-    case 1:
+      switch (operands.size()) {
+      case 1:
+        rewriter.replaceOp(op, operands[0]);
+        break;
+      case 2:
+        rewriter.replaceOpWithNewOp<LLVM::ShuffleVectorOp>(
+            op, dstType, operands[0], operands[1], attr);
+        break;
+      case 4: {
+        // auto subType = vec_ty(dstType.getElementType(), numElts / 2);
+        // indices.pop_back_n(numElts / 2);
+        // DenseI32ArrayAttr attr01 = rewriter.getDenseI32ArrayAttr(indices);
+        // auto shfl01 = rewriter.create<LLVM::ShuffleVectorOp>(
+        //     loc, subType, operands[0], operands[1], attr01);
+        // DenseI32ArrayAttr attr23 = rewriter.getDenseI32ArrayAttr(indices);
+        // auto shfl23 = rewriter.create<LLVM::ShuffleVectorOp>(
+        //     loc, subType, operands[2], operands[3], attr23);
+        // rewriter.replaceOpWithNewOp<LLVM::ShuffleVectorOp>(op, dstType,
+        // shfl01,
+        //                                                    shfl23, attr);
+        unsigned num = 4;
+        Value undef = rewriter.create<LLVM::UndefOp>(loc, dstType);
+        for (auto i = 0; i < num; i++) {
+          undef = rewriter.create<LLVM::InsertElementOp>(
+              loc, dstType, undef, operands[i],
+              rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI32Type(), i));
+        }
+        rewriter.replaceOp(op, undef);
+      } break;
+      case 8: {
+        unsigned num = 8;
+        Value undef = rewriter.create<LLVM::UndefOp>(loc, dstType);
+        for (auto i = 0; i < num; i++) {
+          undef = rewriter.create<LLVM::InsertElementOp>(
+              loc, dstType, undef, operands[i],
+              rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI32Type(), i));
+        }
+        rewriter.replaceOp(op, undef);
+      } break;
+      case 16: {
+        unsigned num = 16;
+        Value undef = rewriter.create<LLVM::UndefOp>(loc, dstType);
+        for (auto i = 0; i < num; i++) {
+          undef = rewriter.create<LLVM::InsertElementOp>(
+              loc, dstType, undef, operands[i],
+              rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI32Type(), i));
+        }
+        rewriter.replaceOp(op, undef);
+      } break;
+      default:
+        llvm_unreachable("add more support for glue op to llvm");
+      }
+    }
+    // scalar
+    else {
       rewriter.replaceOp(op, operands[0]);
-      break;
-    case 2:
-      rewriter.replaceOpWithNewOp<LLVM::ShuffleVectorOp>(
-          op, dstType, operands[0], operands[1], attr);
-      break;
-    case 4: {
-      auto subType = vec_ty(dstType.getElementType(), numElts / 2);
-      indices.pop_back_n(numElts / 2);
-      DenseI32ArrayAttr attr01 = rewriter.getDenseI32ArrayAttr(indices);
-      auto shfl01 = rewriter.create<LLVM::ShuffleVectorOp>(
-          loc, subType, operands[0], operands[1], attr01);
-      DenseI32ArrayAttr attr23 = rewriter.getDenseI32ArrayAttr(indices);
-      auto shfl23 = rewriter.create<LLVM::ShuffleVectorOp>(
-          loc, subType, operands[2], operands[3], attr23);
-      rewriter.replaceOpWithNewOp<LLVM::ShuffleVectorOp>(op, dstType, shfl01,
-                                                         shfl23, attr);
-    } break;
-    case 8: {
-      unsigned num = 8;
-      Value undef = rewriter.create<LLVM::UndefOp>(loc, dstType);
-      for (auto i = 0; i < num; i++) {
-        undef = rewriter.create<LLVM::InsertElementOp>(
-            loc, dstType, undef, operands[i],
-            rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI32Type(), i));
-      }
-      rewriter.replaceOp(op, undef);
-    } break;
-    case 16: {
-      unsigned num = 16;
-      Value undef = rewriter.create<LLVM::UndefOp>(loc, dstType);
-      for (auto i = 0; i < num; i++) {
-        undef = rewriter.create<LLVM::InsertElementOp>(
-            loc, dstType, undef, operands[i],
-            rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI32Type(), i));
-      }
-      rewriter.replaceOp(op, undef);
-    } break;
-    default:
-      llvm_unreachable("add more support for glue op to llvm");
     }
 
     return success();
@@ -625,13 +728,20 @@ class ArithConstantOpLowering
       return failure();
 
     ShapedType dstAttrType = dstElementsAttr.getType();
-    auto vecType = cast<VectorType>(dstType);
-    dstAttrType =
-        VectorType::get(vecType.getNumElements(), vecType.getElementType());
-    dstElementsAttr = dstElementsAttr.resizeSplat(dstAttrType);
-    auto newOp =
-        rewriter.create<LLVM::ConstantOp>(loc, dstType, dstElementsAttr);
-    rewriter.replaceOp(op, newOp);
+    if (auto vecType = dyn_cast<VectorType>(dstType)) {
+      dstAttrType =
+          VectorType::get(vecType.getNumElements(), vecType.getElementType());
+      dstElementsAttr = dstElementsAttr.resizeSplat(dstAttrType);
+      auto newOp =
+          rewriter.create<LLVM::ConstantOp>(loc, dstType, dstElementsAttr);
+      rewriter.replaceOp(op, newOp);
+    }
+    // scalar
+    else {
+      auto newOp = rewriter.create<LLVM::ConstantOp>(
+          loc, dstType, dstElementsAttr.getSplatValue<Attribute>());
+      rewriter.replaceOp(op, newOp);
+    }
     return success();
   }
 };
@@ -780,9 +890,13 @@ class ArithDivFOpLowering
     Location loc = op->getLoc();
     auto srcType = dyn_cast<ShapedType>(op.getType());
     Type dstType = getTypeConverter()->convertType(srcType);
-    auto vecType = cast<VectorType>(dstType);
-    auto attr = rewriter.getFloatAttr(vecType.getElementType(), 1.0);
-    auto dstAttr = DenseElementsAttr::get(vecType, attr.getValue());
+    Attribute dstAttr;
+    if (auto vecType = dyn_cast<VectorType>(dstType)) {
+      auto attr = rewriter.getFloatAttr(vecType.getElementType(), 1.0);
+      dstAttr = DenseElementsAttr::get(vecType, attr.getValue());
+    } else {
+      dstAttr = rewriter.getFloatAttr(dstType, 1.0);
+    }
     auto one = rewriter.create<LLVM::ConstantOp>(loc, dstType, dstAttr);
     auto rcp = rewriter.create<LLVM::FDivOp>(
         loc, dstType, one, adaptor.getRhs(),
