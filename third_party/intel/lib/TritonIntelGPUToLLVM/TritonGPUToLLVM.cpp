@@ -82,7 +82,7 @@ struct ConvertTritonGPUToLLVM
     int threadsPerWarp = triton::gpu::TritonGPUDialect::getThreadsPerWarp(mod);
 
     // fixed 0 for now
-    // 6482 + 16*4 + 16*4 + 16*64*4 = 4352
+    // 64 + 16*4 + 16*4 + 16*64*4 = 4352
     if (pipelineManager.skipSharedMemoryAllocation()) {
       mod->setAttr(
           "triton_gpu.shared",

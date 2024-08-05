@@ -67,6 +67,9 @@ void init_triton_intel_passes_ttgpuir(py::module &&m) {
                      gpu::intel::createTritonIntelGPUMatchTargetSize);
   ADD_PASS_WRAPPER_0("add_schedule_load",
                      gpu::intel::createTritonIntelGPUScheduleLoad);
+  ADD_PASS_WRAPPER_0("annotate_attr",
+                     gpu::intel::createTritonIntelGPUAnnotateAttr);
+  ADD_PASS_WRAPPER_0("expand_slm", gpu::intel::createTritonIntelGPUExpandSLM);
 }
 
 void init_triton_intel(py::module &&m) {

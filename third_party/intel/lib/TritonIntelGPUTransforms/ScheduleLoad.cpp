@@ -89,7 +89,8 @@ public:
   void runOnOperation() override {
     auto *ctx = &getContext();
     ModuleOp m = getOperation();
-    bool enableSLM = mlir::triton::tools::getBoolEnv("ENABLE_SLM");
+    // bool enableSLM = mlir::triton::tools::getBoolEnv("ENABLE_SLM");
+    /*
     m.walk<WalkOrder::PreOrder>([&](scf::ForOp loop) {
       visited.clear();
       unsigned group = -1;
@@ -134,6 +135,7 @@ public:
       auto def = op.getIn().getDefiningOp();
       op->moveAfter(def);
     });
+    */
 
     // HoHo, add fastmath for all
     // maybe after llvm ir

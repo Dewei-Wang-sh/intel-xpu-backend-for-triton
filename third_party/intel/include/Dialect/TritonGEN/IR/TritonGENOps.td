@@ -487,4 +487,36 @@ def TritonGEN_Matrix2DBlockPrefetchOp : TritonGEN_Op<"2Dblockprefetch">,
   let hasVerifier = 1;
 }
 
+// def TritonGEN_1DBlockLoadOp : TritonGEN_Op<"1Dblockload">,
+//   Results<(outs FixedVectorOf<[TritonGEN_MatrixElemType]>:$res)>,
+//   Arguments<(ins
+//     Arg<LLVM_AnyPointer, "", [MemRead]>:$ptr
+//   )> {
+
+//   let summary = "1D block load";
+
+//   string baseDescription = [{
+//   }];
+
+//   let assemblyFormat = [{
+//     operands attr-dict `:` functional-type(operands, results)
+//   }];
+// }
+
+// def TritonGEN_1DBlockStoreOp : TritonGEN_Op<"1Dblockstore">,
+//   Arguments<(ins
+//     Arg<LLVM_AnyPointer, "", [MemWrite]>:$ptr,
+//     FixedVectorOf<[TritonGEN_MatrixElemType]>:$val
+//   )> {
+
+//   let summary = "1D block store";
+
+//   string baseDescription = [{
+//   }];
+
+//   let assemblyFormat = [{
+//     operands attr-dict `:` `(` type(operands) `)`
+//   }];
+// }
+
 #endif // TRITONGEN_OPS

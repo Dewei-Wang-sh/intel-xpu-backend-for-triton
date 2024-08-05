@@ -90,9 +90,9 @@ class XPUBackend(BaseBackend):
             pm.enable_debug()
 
             if opt.warp_level:
-                print("now in the warp-level kernel")
-                intel.passes.ttir.annotate_attr(pm)
-                intel.passes.ttir.expand_slm(pm)
+                print("now in the warp-level kernel", flush=True)
+                intel.passes.ttgpuir.annotate_attr(pm)
+                intel.passes.ttgpuir.expand_slm(pm)
             else:
                 intel.passes.ttir.add_convert_to_ttgpuir_warp(pm, opt.num_warps)
                 # FIXME: Use a better way to check if prefetch instructions are supported once available.
