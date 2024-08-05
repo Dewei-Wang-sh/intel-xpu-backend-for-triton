@@ -1072,7 +1072,7 @@ class tensor:
     def abs(self) -> tensor:
         ...
 
-    def reduce(self, axis, combine_fn, keep_dims=False, combine_op : str = None, cross_warp=False, broadcast=True) -> tensor:
+    def reduce(self, axis, combine_fn, keep_dims=False, combine_op : str = None, cross_warp=False, dst_warps=()) -> tensor:
         ...
 
     def associative_scan(self, axis, combine_fn, reverse=False) -> tensor:
@@ -1997,7 +1997,7 @@ def _insertion_guard(builder):
 
 @_tensor_member_fn
 @builtin
-def reduce(input, axis, combine_fn, keep_dims=False, combine_op: str = None, cross_warp=False, broadcast=False, _builder=None, _generator=None):
+def reduce(input, axis, combine_fn, keep_dims=False, combine_op: str = None, cross_warp=False, dst_warps=(), _builder=None, _generator=None):
     """Applies the combine_fn to all elements in :code:`input` tensors along the provided :code:`axis`
 
     :param input: the input tensor, or tuple of tensors
@@ -2009,7 +2009,7 @@ def reduce(input, axis, combine_fn, keep_dims=False, combine_op: str = None, cro
     """
     if isinstance(input, tensor) and cross_warp:
         combine = _constexpr_to_value(combine_op)
-        return semantic.all_reduction(input, combine, broadcast=broadcast, builder=_builder)
+        return semantic.all_reduction(input, combine, dst_warps=dst_warps, builder=_builder)
     if isinstance(input, tensor):
         return reduce((input, ), axis, combine_fn, keep_dims=keep_dims, combine_op=combine_op, _builder=_builder, _generator=_generator)[0]
 

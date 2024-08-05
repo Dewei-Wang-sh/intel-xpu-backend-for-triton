@@ -1463,7 +1463,7 @@ def reduction(inputs: Sequence[tl.tensor], axis: int, region_builder_fn, builder
 
     return tuple(wrap_tensor(reduce_op.get_result(i), inputs[i].type.scalar, ret_shape) for i in range(len(inputs)))
 
-def all_reduction(input: tl.tensor, combine_op: str, broadcast: bool, builder: ir.builder) -> tl.tensor:
+def all_reduction(input: tl.tensor, combine_op: str, dst_warps: Tuple, builder: ir.builder) -> tl.tensor:
     # combine = _str_to_combine(combine_op)
     sca_ty = input.type.scalar
     if combine_op == 'max':
@@ -1472,7 +1472,11 @@ def all_reduction(input: tl.tensor, combine_op: str, broadcast: bool, builder: i
         combine = ir.ATOMIC_OP.FADD if sca_ty.is_floating() else ir.ATOMIC_OP.ADD
     else:
         raise TypeError(f"unexpected type {combine_op}")
-    handle = builder.create_all_reduce(input.handle, combine, broadcast)
+    if dst_warps:
+        dst_warps = sorted(dst_warps)
+    else:
+        dst_warps=()
+    handle = builder.create_all_reduce(input.handle, combine, dst_warps)
     return tl.tensor(handle, input.type)
 
 # ===----------------------------------------------------------------------===

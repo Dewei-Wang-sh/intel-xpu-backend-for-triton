@@ -301,7 +301,10 @@ def make_launcher(constants, signature, ids):
     // 1x512xf16 * 512x64xf16
     float M = 1, N_CTX = 512, D_HEAD = 64, num_seqs = 16, num_heads = 16;
     float throughput =  num_seqs * num_heads * 2 * 2 * M * N_CTX * D_HEAD * (1e-12)/(gap * 1e-3);
+    float bandwidth =  num_seqs * num_heads * (N_CTX/512) * (M*D_HEAD*2 + 2*D_HEAD*512*2 + M*D_HEAD*4) * (1e-9)/(gap * 1e-3);
+    std::cout << "Triton Time ms " << gap << std::endl;
     std::cout << "Triton Peak TFlops " << throughput << std::endl;
+    std::cout << "Triton Peak GB/s " << bandwidth << std::endl;
   }}
 // end sycl
     static PyObject* launch(PyObject* self, PyObject* args) {{

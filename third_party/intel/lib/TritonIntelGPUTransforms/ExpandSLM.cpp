@@ -173,7 +173,8 @@ public:
           auto cmp = b.create<arith::CmpIOp>(loc, arith::CmpIPredicate::eq,
                                              warpId, cst0);
           scf::IfOp ifOp;
-          bool broadcast = reduce.getBroadcast();
+          // fixed 0 for now
+          bool broadcast = reduce.getDstWarps().empty();
           if (broadcast)
             ifOp = b.create<scf::IfOp>(loc, cmp, false);
           else

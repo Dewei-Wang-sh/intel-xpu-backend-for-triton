@@ -1588,9 +1588,14 @@ void init_triton_ir(py::module &&m) {
            })
       .def("create_all_reduce",
            [](TritonOpBuilder &self, Value &src, RMWOp combine,
-              bool broadcast) -> Value {
-             return self.create<AllReduceOp>(src, combine, broadcast);
+              std::vector<int32_t> &dst_warps) -> Value {
+             return self.create<AllReduceOp>(src, combine, dst_warps);
            });
+  // .def("create_all_reduce",
+  //      [](TritonOpBuilder &self, Value &src, RMWOp combine,
+  //         bool broadcast) -> Value {
+  //        return self.create<AllReduceOp>(src, combine, broadcast);
+  //      });
 
   py::class_<PassManager>(m, "pass_manager", py::module_local())
       .def(py::init<MLIRContext *>())
