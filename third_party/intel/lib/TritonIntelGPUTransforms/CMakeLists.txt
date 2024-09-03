@@ -16,6 +16,7 @@ add_triton_library(TritonIntelGPUTransforms
   ScheduleOps.cpp
   SpillTensorToSLM.cpp
   Utility.cpp
+  TMAMaterialize.cpp
 
   DEPENDS
   TritonIntelGPUTransformsIncGen

@@ -107,6 +107,8 @@ void init_triton_intel_passes_ttgpuir(py::module &&m) {
                      gpu::intel::createTritonIntelGPUScheduleOps);
   ADD_PASS_WRAPPER_0("add_spill_tensor_to_slm",
                      gpu::intel::createTritonIntelSpillTensorToSLM);
+  ADD_PASS_WRAPPER_0("add_tma_lowering",
+                     gpu::intel::createTritonIntelGPUTMALoweringPass);
 }
 
 void init_triton_intel(py::module &&m) {
