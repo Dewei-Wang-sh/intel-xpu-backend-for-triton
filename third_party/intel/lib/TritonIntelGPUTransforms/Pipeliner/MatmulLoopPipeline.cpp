@@ -168,6 +168,11 @@ static Operation *predicateOp(RewriterBase &rewriter, Operation *op,
     return loadOp;
   }
 
+  // hacking for TMA
+  if (auto loadOp = dyn_cast<LLVM::LoadOp>(op)) {
+    return loadOp;
+  }
+
   llvm_unreachable("don't know how to predicate this operation");
 }
 
@@ -241,7 +246,7 @@ createSchedule(scf::ForOp forOp, int numStages) {
   for (Operation *op : prefetchAndDeps) {
     for (Value operand : op->getOperands()) {
       Operation *defOp = getDefOp(operand, op, true);
-      if (defOp)
+      if (defOp && defOp->getBlock() == op->getBlock())
         distanceOneUsers.push_back(defOp);
     }
   }
