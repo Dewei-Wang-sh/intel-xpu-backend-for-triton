@@ -181,12 +181,7 @@ class TritonGPUToLLVMPipelineManager {
 public:
   TritonGPUToLLVMPipelineManager(ModuleOp &mod, MLIRContext *ctx)
       : mod(mod), ctx(ctx),
-        isAdvancedPathEnabled(
-            mod->hasAttr(gpu::intel::TritonIntelGPUDialect::
-                             getSupportSG2DBlockAttrName()) &&
-            mod->hasAttr(
-                gpu::intel::TritonIntelGPUDialect::getSupportDPASAttrName()) &&
-            mlir::triton::tools::getBoolEnv("TRITON_INTEL_ADVANCED_PATH")) {}
+        isAdvancedPathEnabled(mlir::triton::tools::getBoolEnv("TRITON_INTEL_ADVANCED_PATH")) {}
 
   /// FIXME: remove once the block ptr conversion path is capable of handling
   ///        shared memory.

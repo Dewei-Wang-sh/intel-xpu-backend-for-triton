@@ -265,7 +265,7 @@ if(TRITON_BUILD_PYTHON_MODULE)
   else()
     target_link_libraries(triton PRIVATE z)
   endif()
-  target_link_options(triton PRIVATE ${LLVM_LDFLAGS})
+  target_link_options(triton PUBLIC ${LLVM_LDFLAGS})
 endif()
 
 if (UNIX AND NOT APPLE)

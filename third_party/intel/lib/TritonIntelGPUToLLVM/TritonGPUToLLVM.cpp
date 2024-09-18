@@ -78,12 +78,7 @@ struct ConvertTritonGPUToLLVM
 
     intel::TritonGPUToLLVMPipelineManager pipelineManager(mod, context);
     mlir::LowerToLLVMOptions option(context);
-    bool isAdvancedPathEnabled =
-        mod->hasAttr(triton::gpu::intel::TritonIntelGPUDialect::
-                         getSupportSG2DBlockAttrName()) &&
-        mod->hasAttr(triton::gpu::intel::TritonIntelGPUDialect::
-                         getSupportDPASAttrName()) &&
-        mlir::triton::tools::getBoolEnv("TRITON_INTEL_ADVANCED_PATH");
+    bool isAdvancedPathEnabled = mlir::triton::tools::getBoolEnv("TRITON_INTEL_ADVANCED_PATH");
     TritonIntelGPUToLLVMTypeConverter typeConverter(context, option,
                                                     isAdvancedPathEnabled);
     TritonLLVMConversionTarget convTarget(*context);
