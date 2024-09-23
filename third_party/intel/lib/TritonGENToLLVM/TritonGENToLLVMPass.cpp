@@ -119,7 +119,7 @@ static LLVM::CallOp createDeviceFunctionCall(
   return callOp;
 }
 
-[[maybe_unused]] static std::string getGenISATypeMangling(Type ty) {
+static std::string getGenISATypeMangling(Type ty) {
   if (auto vecTy = dyn_cast<VectorType>(ty))
     return "v" + std::to_string(vecTy.getNumElements()) +
            getGenISATypeMangling(vecTy.getElementType());
@@ -179,9 +179,39 @@ loadCacheControlToCacheControls(Builder &builder,
   return builder.getAttr<TritonGEN::DecorationCacheControlAttr>(decorations);
 }
 
-[[maybe_unused]] static Value
-createGenISA2DBlockRead(TritonGEN::Matrix2DBlockLoadOp op,
-                        ConversionPatternRewriter &rewriter) {
+static bool isOCLBuiltinAvailable(TritonGEN::Matrix2DBlockLoadOp op) {
+  VectorType resTy = op.getRes().getType();
+  unsigned resElemTySize = resTy.getElementType().getIntOrFloatBitWidth();
+  bool needsResElemSizeEqualTo32 =
+      op.getElemSizeInBits() == 32 || op.getVnniTransform();
+  assert((!needsResElemSizeEqualTo32 || resElemTySize == 32) &&
+         "Expecting 32-bit element type");
+  if (!needsResElemSizeEqualTo32 && resElemTySize != 16)
+    return false;
+
+  if (op.getVnniTransform())
+    return true;
+
+  if (op.getTranspose() && op.getTileHeight() != 16)
+    return false;
+
+  uint32_t tileWidth = op.getTileWidth();
+  switch (op.getElemSizeInBits()) {
+  case 8:
+    return (tileWidth == 32);
+  case 16:
+    return (tileWidth == 16);
+  case 32:
+    return (tileWidth == 8 || tileWidth == 16);
+  default:
+    llvm_unreachable("unexpected element size");
+  }
+
+  return false;
+}
+
+static Value createGenISA2DBlockRead(TritonGEN::Matrix2DBlockLoadOp op,
+                                     ConversionPatternRewriter &rewriter) {
   MLIRContext *ctx = rewriter.getContext();
   VectorType resType = op.getRes().getType();
   Location loc = op->getLoc();
@@ -288,7 +318,7 @@ storeCacheControlToCacheControls(Builder &builder,
   return builder.getAttr<TritonGEN::DecorationCacheControlAttr>(decorations);
 }
 
-[[maybe_unused]] static LLVM::CallOp
+static LLVM::CallOp
 createGenISA2DBlockWrite(TritonGEN::Matrix2DBlockStoreOp op,
                          ConversionPatternRewriter &rewriter) {
   MLIRContext *ctx = rewriter.getContext();
@@ -336,7 +366,7 @@ createGenISA2DBlockWrite(TritonGEN::Matrix2DBlockStoreOp op,
   return call;
 }
 
-[[maybe_unused]] static LLVM::CallOp
+static LLVM::CallOp
 createGenISA2DBlockPrefetch(TritonGEN::Matrix2DBlockPrefetchOp op,
                             ConversionPatternRewriter &rewriter) {
   MLIRContext *ctx = rewriter.getContext();
@@ -503,6 +533,14 @@ struct TritonMatrix2DBlockLoadLowering
   LogicalResult
   matchAndRewrite(TritonGEN::Matrix2DBlockLoadOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
+
+    // TODO: Remove GenISA lowering after PoC productization is completed.
+    if (tools::getBoolEnv("TRITONGEN_FORCE_GENISA") ||
+        !isOCLBuiltinAvailable(op)) {
+      rewriter.replaceOp(op, createGenISA2DBlockRead(op, rewriter));
+      return success();
+    }
+
     MLIRContext *ctx = rewriter.getContext();
     Location loc = op->getLoc();
     VectorType resType = op.getRes().getType();
@@ -563,6 +601,12 @@ struct TritonMatrix2DBlockStoreLowering
   LogicalResult
   matchAndRewrite(TritonGEN::Matrix2DBlockStoreOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
+    // TODO: Remove GenISA lowering after PoC productization is completed.
+    if (tools::getBoolEnv("TRITONGEN_FORCE_GENISA")) {
+      rewriter.replaceOp(op, createGenISA2DBlockWrite(op, rewriter));
+      return success();
+    }
+
     MLIRContext *ctx = rewriter.getContext();
     Location loc = op->getLoc();
 
@@ -625,6 +669,13 @@ struct TritonMatrix2DBlockPrefetchLowering
   LogicalResult
   matchAndRewrite(TritonGEN::Matrix2DBlockPrefetchOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
+    // TODO: Remove GenISA lowering after PoC productization is completed.
+    bool useGenISA = tools::getBoolEnv("TRITONGEN_FORCE_GENISA");
+    if (useGenISA) {
+      rewriter.replaceOp(op, createGenISA2DBlockPrefetch(op, rewriter));
+      return success();
+    }
+
     MLIRContext *ctx = rewriter.getContext();
     Location loc = op->getLoc();
     std::string fnName = "intel_sub_group_2d_block_prefetch_";
