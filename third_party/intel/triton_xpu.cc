@@ -103,6 +103,8 @@ void init_triton_intel_passes_ttgpuir(py::module &&m) {
   ADD_PASS_WRAPPER_0(
       "add_optimize_elementwise_parallelism",
       gpu::intel::createTritonIntelGPUOptimizeElementwiseParallelism);
+  ADD_PASS_WRAPPER_0("add_schedule_ops",
+                     gpu::intel::createTritonIntelGPUScheduleOps);
 }
 
 void init_triton_intel(py::module &&m) {
