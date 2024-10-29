@@ -1,5 +1,6 @@
 #include "third_party/intel/include/Target/LLVMIR/PostProcess.h"
 #include "third_party/intel/include/Target/LLVMIR/SLPVectorizer.h"
+#include "third_party/intel/include/Target/LLVMIR/CodeSink.h"
 
 #include "llvm/IR/Module.h"
 #include "llvm/Support/raw_ostream.h"
@@ -36,6 +37,10 @@ void postProcessLLVMIR(llvm::Module &mod) {
   print("PostProcessing: Before SLPVectorizer", mod);
   SLPVectorizer(mod, trace);
   print("PostProcessing: After SLPVectorizer", mod);
+
+  print("PostProcessing: Before CodeSink", mod);
+  CodeSink(mod, trace);
+  print("PostProcessing: After CodeSink", mod);
 }
 
 } // namespace mlir::triton::intel
