@@ -5,4 +5,5 @@ add_mlir_translation_library(PostProcessLLVMIR
   LICM.cpp
   PostProcess.cpp
   SLPVectorizer.cpp
+  CodeSink.cpp
 )
