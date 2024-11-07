@@ -221,10 +221,10 @@ class XPUBackend(BaseBackend):
         # Annotate module with information required by subsequent transformations.
         pm = ir.pass_manager(mod.context)
         pm.enable_debug()
-        intel.passes.ttgpuir.add_triton_annotate_module(pm, 16, # min(properties["sub_group_sizes"]),
-                                                        True, # properties["has_subgroup_2d_block_io"],
-                                                        True, # properties["has_subgroup_matrix_multiply_accumulate"],
-                                                        True, # properties["has_bfloat16_conversions"],
+        intel.passes.ttgpuir.add_triton_annotate_module(pm, 16,  # min(properties["sub_group_sizes"]),
+                                                        True,  # properties["has_subgroup_2d_block_io"],
+                                                        True,  # properties["has_subgroup_matrix_multiply_accumulate"],
+                                                        True,  # properties["has_bfloat16_conversions"],
                                                         opt.threads_per_warp)
         pm.run(mod)
 
@@ -314,7 +314,7 @@ class XPUBackend(BaseBackend):
             paths = [path for (name, path) in options.extern_libs]
             llvm.link_extern_libs(llvm_mod, paths)
         intel.optimize_module(llvm_mod, llvm.OPTIMIZE_O3)
-        if os.getenv("TRITON_INTEL_ENABLE_POST_PROCESS_LLIR", "0") == "1":
+        if os.getenv("TRITON_INTEL_ENABLE_POST_PROCESS_LLIR", "1") == "1":
             intel.post_process_llir(llvm_mod)
 
         # Get some metadata

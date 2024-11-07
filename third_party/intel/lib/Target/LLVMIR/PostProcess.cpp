@@ -38,9 +38,9 @@ void postProcessLLVMIR(llvm::Module &mod) {
   SLPVectorizer(mod, trace);
   print("PostProcessing: After SLPVectorizer", mod);
 
-  print("PostProcessing: Before CodeSink", mod);
-  CodeSink(mod, trace);
-  print("PostProcessing: After CodeSink", mod);
+  //  print("PostProcessing: Before CodeSink", mod);
+  //  CodeSink(mod, trace);
+  //  print("PostProcessing: After CodeSink", mod);
 }
 
 } // namespace mlir::triton::intel
