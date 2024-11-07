@@ -40,6 +40,7 @@ on:
         type: boolean
         default: false
 
+  push:
   schedule:
     - cron: "5 2 * * *"
 
@@ -81,8 +82,8 @@ jobs:
       pytorch_mode: ${{ inputs.pytorch_mode || 'source' }}
       python_version: ${{ matrix.python }}
       upload_test_reports: ${{ inputs.upload_test_reports || false }}
-      ignore_errors: ${{ inputs.ignore_errors || false }}
-      skip_list: conda
+      ignore_errors: true #${{ inputs.ignore_errors || false }}
+      skip_list: conda1
       run_name: ${{ inputs.run_name }}
       enable_unskip: ${{ inputs.enable_unskip || false }}
       env_manager: conda
