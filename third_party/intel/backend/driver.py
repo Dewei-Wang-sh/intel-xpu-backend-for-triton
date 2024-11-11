@@ -49,10 +49,10 @@ def find_sycl(include_dir: list[str]) -> tuple[list[str], Optional[str]]:
     try:
         sycl_rt = importlib.metadata.metadata("intel-sycl-rt")
     except importlib.metadata.PackageNotFoundError:
-        raise AssertionError(assertion_message)
+        raise AssertionError("1" + assertion_message)
 
     if Version(sycl_rt.get("version", "0.0.0")) in SpecifierSet("<2025.0.0a1"):
-        raise AssertionError(assertion_message)
+        raise AssertionError("2" + assertion_message)
 
     sycl_dir = None
     for f in importlib.metadata.files("intel-sycl-rt"):
