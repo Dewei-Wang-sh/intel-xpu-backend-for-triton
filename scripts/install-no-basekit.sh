@@ -20,16 +20,13 @@ install_env() {
     find /opt/intel/oneapi/compiler/2024.1/lib/ \( -name '*.so' -or -name '*.so.*' \) -exec cp -n {} $HOME/miniforge3/envs/triton/lib \;
 
     python -m venv ./.venv; source ./.venv/bin/activate
+    pip3 install intel-sycl-rt
 
-    ln -snf /opt/intel/oneapi/compiler/2024.1/include/sycl $HOME/miniforge3/envs/triton/include/sycl
-    conda create -n triton --override-channels -c conda-forge python=$python_version.*
-    conda env update -f scripts/triton.yml
+#    ln -snf /opt/intel/oneapi/compiler/2024.1/include/sycl $HOME/miniforge3/envs/triton/include/sycl
 
-    find /opt/intel/oneapi/ \( -name '*.so' -or -name '*.so.*' \) -exec cp -n {} $HOME/miniforge3/envs/triton/lib \;
-    ln -snf /usr/include/level_zero $HOME/miniforge3/envs/triton/bin/../x86_64-conda-linux-gnu/sysroot/usr/include/level_zero
-    find /usr -name libze_\* -exec cp -n {} $HOME/miniforge3/envs/triton/lib \;
-    link_sycl lib/python$python_version/site-packages/triton/backends/intel/include
-    link_sycl x86_64-conda-linux-gnu/sysroot/usr/include
+#    find /opt/intel/oneapi/ \( -name '*.so' -or -name '*.so.*' \) -exec cp -n {} $HOME/miniforge3/envs/triton/lib \;
+#    link_sycl lib/python$python_version/site-packages/triton/backends/intel/include
+#    link_sycl x86_64-conda-linux-gnu/sysroot/usr/include
 }
 
 print_env_info() {
