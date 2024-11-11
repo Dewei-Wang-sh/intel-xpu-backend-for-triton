@@ -18,6 +18,7 @@ install_env() {
 
     find /opt/intel/oneapi/mkl/2025.0/lib/ \( -name '*.so' -or -name '*.so.*' \) -exec cp -n {} $HOME/miniforge3/envs/triton/lib \;
     find /opt/intel/oneapi/compiler/2024.1/lib/ \( -name '*.so' -or -name '*.so.*' \) -exec cp -n {} $HOME/miniforge3/envs/triton/lib \;
+    find /opt/intel/oneapi/pti \( -name '*.so' -or -name '*.so.*' \) -exec cp -n {} $HOME/miniforge3/envs/triton/lib \;
 
     python -m venv ./.venv; source ./.venv/bin/activate
     pip3 install intel-sycl-rt
@@ -27,8 +28,6 @@ install_env() {
 #    find /opt/intel/oneapi/ \( -name '*.so' -or -name '*.so.*' \) -exec cp -n {} $HOME/miniforge3/envs/triton/lib \;
 #    link_sycl lib/python$python_version/site-packages/triton/backends/intel/include
 #    link_sycl x86_64-conda-linux-gnu/sysroot/usr/include
-    find / -name libpti_view.so.0.9
-    exit 1
 }
 
 print_env_info() {
