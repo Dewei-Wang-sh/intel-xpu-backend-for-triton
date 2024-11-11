@@ -3,7 +3,7 @@
 set -vxe
 
 script_dir=$(dirname "$0")
-source "$script_dir/run_util.sh"
+source "$script_dir/env-util.sh"
 
 export PATH="$HOME/miniforge3/bin:$PATH"
 
