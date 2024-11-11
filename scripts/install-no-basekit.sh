@@ -27,6 +27,8 @@ install_env() {
 #    find /opt/intel/oneapi/ \( -name '*.so' -or -name '*.so.*' \) -exec cp -n {} $HOME/miniforge3/envs/triton/lib \;
 #    link_sycl lib/python$python_version/site-packages/triton/backends/intel/include
 #    link_sycl x86_64-conda-linux-gnu/sysroot/usr/include
+    find / -name libpti_view.so.0.9
+    exit 1
 }
 
 print_env_info() {
