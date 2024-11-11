@@ -26,8 +26,9 @@ install_env() {
 #    ln -snf /opt/intel/oneapi/compiler/2024.1/include/sycl $HOME/miniforge3/envs/triton/include/sycl
 
 #    find /opt/intel/oneapi/ \( -name '*.so' -or -name '*.so.*' \) -exec cp -n {} $HOME/miniforge3/envs/triton/lib \;
-#    link_sycl lib/python$python_version/site-packages/triton/backends/intel/include
-#    link_sycl x86_64-conda-linux-gnu/sysroot/usr/include
+    link_sycl lib/python$python_version/site-packages/triton/backends/intel/include
+    link_sycl x86_64-conda-linux-gnu/sysroot/usr/include
+    link_sycl include/sycl
 }
 
 print_env_info() {
