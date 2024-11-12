@@ -112,6 +112,11 @@ ScratchConfig getScratchConfigForCvt(RankedTensorType srcTy,
     return ScratchConfig({}, {});
   }
 
+  if (gpu::intel::cvtIsUnbroadcast(srcTy, dstTy)) {
+    // Conversions identified as "unbroadcast" do not need scratch memory.
+    return ScratchConfig({}, {});
+  }
+
   if (gpu::intel::cvtIsSubGroupTranspose(srcTy, dstTy)) {
     // Conversions that can be implemented as sub-group transposes store the
     // whole tensor in shared memory and read it afterwards.
