@@ -142,10 +142,12 @@ RankedTensorType getOptimizedType(RankedTensorType type,
   [[maybe_unused]] unsigned ctaSplitNum = product(encoding.getCTASplitNum());
   assert(ctaSplitNum == 1 && "Expecting single CTA");
 
+  llvm::errs() << linearLayout << "\n";
+
   RankedTensorType::Builder typeBuilder(type);
   int32_t numWorkGroupPos = linearLayout.getInDimSizeLog2(kWarp);
   unsigned sizePerThread =
-      numWorkGroupPos == 0 ? 1 : linearLayout.getBasis(kWarp, 0)[0];
+      numWorkGroupPos == 0 ? 1 : linearLayout.getBasis(kWarp, 0)[0] / threadsPerWarp;
   CTALayoutAttr ctaLayout = CTALayoutAttr::getDefault(builder.getContext(), 1);
   auto newEncoding = builder.getAttr<BlockedEncodingAttr>(
       sizePerThread, threadsPerWarp, warpsPerCTA, /*order=*/0, ctaLayout);
