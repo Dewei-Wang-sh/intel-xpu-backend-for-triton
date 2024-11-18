@@ -190,10 +190,14 @@ void TargetInfo::printf(RewriterBase &rewriter, StringRef msg,
 static LLVM::LLVMFuncOp getAssertfailDeclaration(RewriterBase &rewriter) {
   auto moduleOp = rewriter.getBlock()->getParent()->getParentOfType<ModuleOp>();
   StringRef funcName = "__assert_fail";
-  Operation *funcOp = moduleOp.lookupSymbol(funcName);
-  if (funcOp)
-    return cast<LLVM::LLVMFuncOp>(*funcOp);
-
+  llvm::outs() << "getAssertfailDeclaration\n";
+  {
+    Operation *funcOp = moduleOp.lookupSymbol(funcName);
+    if (funcOp) {
+      llvm::outs() << "moduleOp.lookupSymbol\n";
+      return cast<LLVM::LLVMFuncOp>(*funcOp);
+    }
+  }
   // void __assert_fail(const char * assertion, const char * file, unsigned
   // int line, const char * function);
   auto *ctx = rewriter.getContext();
@@ -206,10 +210,17 @@ static LLVM::LLVMFuncOp getAssertfailDeclaration(RewriterBase &rewriter) {
   RewriterBase::InsertionGuard guard(rewriter);
   rewriter.setInsertionPointToStart(moduleOp.getBody());
 
-  auto func = rewriter.create<LLVM::LLVMFuncOp>(UnknownLoc::get(ctx), funcName,
-                                                funcType);
-  func.setCConv(LLVM::cconv::CConv::SPIR_FUNC);
-  return func;
+  //auto funcOp = rewriter.create<LLVM::LLVMFuncOp>(UnknownLoc::get(ctx), funcName,
+  //                                                funcType);
+  auto funcOp = rewriter.create<LLVM::LLVMFuncOp>(
+      UnknownLoc::get(ctx), funcName, funcType, LLVM::Linkage::ExternWeak,
+      /*dsoLocal*/ false, LLVM::CConv::SPIR_FUNC, /*comdat=*/SymbolRefAttr{});
+  //funcOp.setCConv(LLVM::cconv::CConv::SPIR_FUNC);
+  //funcOp->setAttr("noreturn", StringAttr::get(ctx, "noreturn"));
+  funcOp->setAttr("noreturn", rewriter.getUnitAttr());
+  //funcOp.setPassthroughAttr(
+  // ArrayAttr::get(ctx, StringAttr::get(ctx, "noreturn")));
+  return funcOp;
 }
 
 void TargetInfo::assertFail(RewriterBase &rewriter, Location loc,
