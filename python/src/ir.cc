@@ -1650,12 +1650,15 @@ void init_triton_ir(py::module &&m) {
 
                  return false;
                };
+               auto printNone = [funcToDump](Pass *, Operation *op) -> bool {
+                 return false;
+               };
                self.enableIRPrinting(
                    /*shouldPrintBeforePass=*/printAlways,
                    /*shouldPrintAfterPass=*/printAlways,
                    /*printModuleScope=*/true,
-                   /*printAfterOnlyOnChange=*/false,
-                   /*printAfterOnlyOnFailure*/ true, llvm::dbgs(),
+                   /*printAfterOnlyOnChange=*/true,
+                   /*printAfterOnlyOnFailure*/ false, llvm::dbgs(),
                    printingFlags);
              }
            })

@@ -34,6 +34,7 @@ def _path_to_binary(binary: str):
 
 @dataclass
 class XPUOptions:
+    advanced_path: bool = False
     num_warps: int = 4
     num_ctas: int = 1
     num_stages: int = 2
@@ -100,7 +101,7 @@ class XPUBackend(BaseBackend):
 
             intel.passes.ttir.add_convert_to_ttgpuir_warp(pm, opt.num_warps)
             inject_split_barriers = False
-            intel.passes.ttgpuir.add_prefetch_block(pm, opt.num_stages, inject_split_barriers)
+            #intel.passes.ttgpuir.add_prefetch_block(pm, opt.num_stages, inject_split_barriers)
             intel.passes.ttgpuir.add_distribute_to_warps(pm)
             passes.common.add_canonicalizer(pm)
             passes.common.add_cse(pm)
@@ -203,6 +204,9 @@ class XPUBackend(BaseBackend):
         pm = ir.pass_manager(mod.context)
         pm.enable_debug()
 
+        if (opt.advanced_path):
+            return XPUBackend.AdvancedPath.make_ttgir(mod, metadata, opt)
+
         if (os.getenv("TRITON_INTEL_ADVANCED_PATH", "0") == "1"):
             return XPUBackend.AdvancedPath.make_ttgir(mod, metadata, opt)
 
@@ -253,7 +257,7 @@ class XPUBackend(BaseBackend):
         # being used, e.g., convert_layout.
         #if os.getenv("TRITON_INTEL_REDUCE_TRANSPOSE", "0") != "1":
         #    intel.passes.ttgpuir.add_allocate_shared_memory(pm)
-        intel.passes.ttgpuir.add_to_llvmir(pm)
+        intel.passes.ttgpuir.add_to_llvmir(pm, options.advanced_path)
         passes.convert.add_arith_to_llvmir(pm)
         passes.common.add_canonicalizer(pm)
         passes.common.add_cse(pm)

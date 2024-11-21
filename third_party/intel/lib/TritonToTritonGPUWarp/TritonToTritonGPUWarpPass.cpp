@@ -155,7 +155,7 @@ public:
       auto result = func.walk([&](Operation *op) -> WalkResult {
         if (auto load = dyn_cast<tt::LoadOp>(op)) {
           if (!isa<tt::PointerType>(load.getPtr().getType()))
-            return WalkResult::interrupt();
+            return WalkResult::advance();
         } else if (isa<tt::MakeTensorPtrOp>(op))
           hasBlockPointer = true;
         else if (isa<tt::DotOp>(op))

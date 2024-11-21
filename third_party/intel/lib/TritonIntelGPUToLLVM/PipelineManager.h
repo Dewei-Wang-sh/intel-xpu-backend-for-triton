@@ -179,9 +179,9 @@ struct AddSPIRVEnvPattern : public mlir::OpRewritePattern<ModuleOp> {
 /// block pointers or not.
 class TritonGPUToLLVMPipelineManager {
 public:
-  TritonGPUToLLVMPipelineManager(ModuleOp &mod, MLIRContext *ctx)
+  TritonGPUToLLVMPipelineManager(ModuleOp &mod, MLIRContext *ctx, bool advanced)
       : mod(mod), ctx(ctx),
-        isAdvancedPathEnabled(mlir::triton::tools::getBoolEnv("TRITON_INTEL_ADVANCED_PATH")) {}
+        isAdvancedPathEnabled(advanced) {}
 
   /// FIXME: remove once the block ptr conversion path is capable of handling
   ///        shared memory.

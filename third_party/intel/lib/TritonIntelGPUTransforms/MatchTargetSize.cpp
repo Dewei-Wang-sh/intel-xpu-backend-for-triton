@@ -1180,8 +1180,13 @@ void MatchTargetSizePass::transformBroadcastOp(ttgi::BroadcastOp op) {
     auto newOp = b.create<ttgi::BroadcastOp>(loc, newTy, op.getSrc());
     auto extract0 = b.create<ttgi::ExtractOp>(loc, tType, newOp, 0);
     auto extract1 = b.create<ttgi::ExtractOp>(loc, tType, newOp, 1);
-    SmallVector<Value> ops{extract0, extract1, extract0, extract1,
-                           extract0, extract1, extract0, extract1};
+    SmallVector<Value> ops;
+    for (int i = 0; i < resDim1 / dstDim1; ++i) {
+      ops.push_back(extract0);
+      ops.push_back(extract1);
+    }
+    // SmallVector<Value> ops{extract0, extract1, extract0, extract1,
+    //                        extract0, extract1, extract0, extract1};
     glue = b.create<ttgi::GlueOp>(loc, resType, ops);
   } else if (srcDim0 == 1 && srcDim1 == resDim1) {
     // Handle row-vector broadcasts, e.g. 1x64 --> 16x64.

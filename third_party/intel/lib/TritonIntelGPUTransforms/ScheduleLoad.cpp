@@ -14,6 +14,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 
+#include "mlir/Analysis/Liveness.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/TypeUtilities.h"
@@ -42,12 +43,63 @@ class ScheduleLoadPass
     : public triton::gpu::intel::impl::TritonIntelGPUScheduleLoadBase<
           ScheduleLoadPass> {
 public:
+  unsigned getSizeInBytes(Type type) {
+    if (type.isIntOrFloat())
+      return 64;
+    else if (auto tType = dyn_cast<RankedTensorType>(type)) {
+      unsigned size = tType.getNumElements() * tType.getElementType().getIntOrFloatBitWidth() / 8;
+      Attribute encoding = tType.getEncoding();
+      if (encoding && isa<tt::gpu::SliceEncodingAttr>(encoding))
+        size *= 16; 
+      return size;
+    } else if (isa<tt::PointerType>(type))
+      return 64; // offsetX offsetY, not accurate...
+    else
+      assert(0 && "unsupported type");
+    return 0;
+  }
   void runOnOperation() override {
-    if (!triton::tools::getBoolEnv("TRITON_INTEL_ENABLE_INSTR_SCHED"))
-      return;
-
     MLIRContext *ctx = &getContext();
     ModuleOp mod = getOperation();
+
+    bool highRegPressure = false;
+    auto &liveness = getAnalysis<Liveness>();
+    DenseMap<Value, unsigned> liveSizeMap;
+    mod.walk<WalkOrder::PreOrder>([&](tt::DotOp dot) -> WalkResult {
+      // only consider the last dot
+      if (isa<tt::DotOp, ttgi::ExtractOp>(++dot->getIterator()))
+        return WalkResult::advance();
+      Block *block = dot->getBlock();
+      const LivenessBlockInfo *info = liveness.getLiveness(block);
+      Liveness::ValueSetT lives = info->currentlyLiveValues(dot);
+      unsigned size = 0;
+      for (const auto &live: lives) {
+        unsigned currSize = 0;
+        if (liveSizeMap.contains(live)) {
+          currSize = liveSizeMap[live];
+        } else {
+          Type type = live.getType();
+          currSize = getSizeInBytes(type);
+        }
+        size += currSize;
+        live.dump();
+        llvm::outs()<< "live value size: " << currSize << "\n";
+        llvm::outs().flush();
+      }
+      dot.dump();
+      llvm::outs()<< "all live value size: " << size << "\n";
+      llvm::outs()<< "all live value size in Regs: " << size/64 << "\n";
+      llvm::outs().flush();
+      if (size > 166384) {
+        highRegPressure = true;
+        return WalkResult::interrupt();
+      }
+      return WalkResult::advance();
+    });
+
+
+    if (!triton::tools::getBoolEnv("TRITON_INTEL_ENABLE_INSTR_SCHED"))
+      return;
 
     mod.walk<WalkOrder::PreOrder>([&](scf::ForOp loop) {
       visited.clear();

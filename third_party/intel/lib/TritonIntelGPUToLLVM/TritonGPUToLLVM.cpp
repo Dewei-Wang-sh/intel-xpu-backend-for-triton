@@ -66,6 +66,8 @@ struct ConvertTritonGPUToLLVM
     : public triton::gpu::intel::impl::ConvertTritonIntelGPUToLLVMBase<
           ConvertTritonGPUToLLVM> {
   using ConvertTritonIntelGPUToLLVMBase::ConvertTritonIntelGPUToLLVMBase;
+  ConvertTritonGPUToLLVM() = default;
+  ConvertTritonGPUToLLVM(bool advancedPath) { this->advancedPath = advancedPath; }
 
   void getDependentDialects(DialectRegistry &registry) const override {
     registry.insert<LLVM::LLVMDialect, TritonGEN::TritonGENDialect,
@@ -76,9 +78,10 @@ struct ConvertTritonGPUToLLVM
     MLIRContext *context = &getContext();
     ModuleOp mod = getOperation();
 
-    intel::TritonGPUToLLVMPipelineManager pipelineManager(mod, context);
-    mlir::LowerToLLVMOptions option(context);
     bool isAdvancedPathEnabled = mlir::triton::tools::getBoolEnv("TRITON_INTEL_ADVANCED_PATH");
+    isAdvancedPathEnabled |= advancedPath;
+    intel::TritonGPUToLLVMPipelineManager pipelineManager(mod, context, isAdvancedPathEnabled);
+    mlir::LowerToLLVMOptions option(context);
     TritonIntelGPUToLLVMTypeConverter typeConverter(context, option,
                                                     isAdvancedPathEnabled);
     TritonLLVMConversionTarget convTarget(*context);
