@@ -58,6 +58,7 @@ class XPUOptions:
     generate_native_code: bool = False
     advanced_path: bool = False
     one_matrix_per_load_for_bt: bool = False
+    shared: int = 0
 
     def __post_init__(self):
         default_libdir = Path(__file__).parent / 'lib'
@@ -222,7 +223,7 @@ class XPUBackend(BaseBackend):
         pm = ir.pass_manager(mod.context)
         pm.enable_debug()
         intel.passes.ttgpuir.add_triton_annotate_module(pm, 16,  # min(properties["sub_group_sizes"]),
-                                                        True,  # properties["has_subgroup_2d_block_io"],
+                                                        False,  # properties["has_subgroup_2d_block_io"],
                                                         True,  # properties["has_subgroup_matrix_multiply_accumulate"],
                                                         True,  # properties["has_bfloat16_conversions"],
                                                         opt.threads_per_warp)
@@ -326,6 +327,8 @@ class XPUBackend(BaseBackend):
 
     @staticmethod
     def make_spv(src, metadata, options):
+        if src is not str:
+            src = str(src)
         spirv, name = intel.translate_to_spirv(src)
         metadata["name"] = name
         if options.grf_mode == 'small':
