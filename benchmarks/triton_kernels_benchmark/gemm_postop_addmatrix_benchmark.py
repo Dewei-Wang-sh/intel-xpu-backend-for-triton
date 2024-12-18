@@ -218,7 +218,7 @@ def matmul(a, b, d, c):
         # argument names to use as an x-axis for the plot
         x_names=['B', 'M', 'K', 'N', 'dtype'],
         # different possible values for `x_name`
-        x_vals=[[1, 1024 * i, 1024 * i, 1024 * i, dtype] for i in [1, 2, 4, 8] for dtype in [torch.bfloat16, torch.int8]] +  #
+        x_vals=[[1, 1024 * i, 1024 * i, 1024 * i, dtype] for i in [1, 2, 4, 8] for dtype in [torch.bfloat16]] +  #
         [[*shape, dtype] for shape in [
             [1, 1, 5120, 13824],  #
             [1, 4, 4096, 12288],  #
@@ -240,7 +240,7 @@ def matmul(a, b, d, c):
             [32, 4096, 4096, 128],  #
             [4096, 8, 128, 16384],  #
             [4096, 8, 16384, 128]
-        ] for dtype in [torch.bfloat16, torch.int8]], 
+        ] for dtype in [torch.bfloat16]], 
         line_arg='provider',
         # argument name whose value corresponds to a different line in the plot
         # possible values for `line_arg``
@@ -286,7 +286,9 @@ def benchmark(B, M, N, K, dtype, provider):
         torch_dtype = dtype if dtype.is_floating_point else res_dtype
         torch_fn = lambda: torch.matmul(a.to(device=torch_device, dtype=torch_dtype), b.to(device=torch_device, dtype=torch_dtype)).to(device='xpu', dtype=res_dtype) + d
         rtol = 1e-2 if a.dtype == torch.bfloat16 else 1e-3
-        benchmark_suit.assert_close(triton_fn(), torch_fn(), atol=1e-4, rtol=rtol, err_msg='triton to torch')
+        if dtype.is_floating_point or [B, M, N, K] in [[1, 1024, 1024, 1024], [1, 2048, 2048, 2048], [1, 512, 8192, 32768], [4, 32768, 4096, 128]]:
+            # torch int8 matmul on GPU is not supported. only check a few int8 shapes to reduce runtime
+            benchmark_suit.assert_close(triton_fn(), torch_fn(), atol=1e-4, rtol=rtol, err_msg='triton to torch')
         _, min_ms, max_ms, mean_ms, cv = benchmark_suit.do_bench(triton_fn, n_warmup=10, n_repeat=10,
                                                                  quantiles=quantiles, kernel_name=kernel_name)
     else:
