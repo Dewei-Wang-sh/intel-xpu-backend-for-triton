@@ -527,19 +527,18 @@ attention = _attention.apply
     benchmark_suit.Benchmark(
         # argument names to use as an x-axis for the plot
         x_names=['Z', 'H', 'N_CTX', 'D_HEAD', 'CAUSAL', 'mode'],
-        x_vals=
-        # [[z, h, 16384 // z, dhead, causal, mode]
-        #         for z in [1, 2, 4, 8, 16, 32]
-        #         for (h, dhead) in [(16, 128), (32, 64)]
-        #         for causal in [False, True]
-        #         for mode in ["bwd"]]  # +
-        [[4, 32, 1024, 64, True, 'bwd']],
+        x_vals=[[z, h, 16384 // z, dhead, causal, mode]
+                for z in [1, 2, 4, 8, 16, 32]
+                for (h, dhead) in [(16, 128), (32, 64)]
+                for causal in [False, True]
+                for mode in ['bwd']]  #
+        + [[4, 48, 1024, 64, causal, mode] for causal in [False, True] for mode in ['bwd']],
         line_arg='provider',
         # argument name whose value corresponds to a different line in the plot
         # possible values for `line_arg``
-        line_vals=['triton'],
+        line_vals=['xetla'],
         # label name for the lines
-        line_names=['Triton'],
+        line_names=['XeTLA'],
         # line styles
         styles=[('green', '-'), ('green', '--'), ('blue', '-'), ('blue', '--')],
         ylabel=['GB/s', 'TFlops'],  # label name for the y-axis
@@ -586,10 +585,11 @@ def benchmark(Z, H, N_CTX, D_HEAD, CAUSAL, mode, provider):
                 torch_o = torch_fn()
                 torch_do = torch.randn_like(torch_o)
                 torch_fn = lambda: torch_o.backward(torch_do, retain_graph=True)
-            atol = 1e-1 if N_CTX == 16384 else 1e-2
-            # Todo: comfirm atol and rtol for bwd mode
             if mode == 'fwd':
+                atol = 1e-1 if N_CTX == 16384 else 1e-2
                 benchmark_suit.assert_close(triton_fn(), torch_fn(), atol=atol, rtol=1e-3, err_msg='triton to torch')
+            else:
+                benchmark_suit.assert_close(triton_o, torch_o, atol=1e-2, rtol=0, err_msg='triton to torch')
             _, min_ms, max_ms, mean, cv = benchmark_suit.do_bench(triton_fn, n_warmup=10, n_repeat=10,
                                                                   quantiles=quantiles)
 
