@@ -283,11 +283,13 @@ run_benchmark_attention() {
   python setup.py install
 
   echo "Default path:"
+  BENCHMARKING_METHOD="ELAPSED_TIME" \
   python $TRITON_PROJ/benchmarks/triton_kernels_benchmark/flash_attention_benchmark.py
 
   echo "Advanced path:"
   TRITON_INTEL_ADVANCED_PATH=1 \
     IGC_VISAOptions=" -enableBCR" \
+    BENCHMARKING_METHOD="ELAPSED_TIME" \
     python $TRITON_PROJ/benchmarks/triton_kernels_benchmark/flash_attention_benchmark.py
 }
 

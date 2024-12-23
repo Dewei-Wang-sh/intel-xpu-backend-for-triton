@@ -218,7 +218,7 @@ jobs:
         if: ${{ steps.install.outcome == 'success' && !cancelled() && !contains(fromJson(inputs.skip_benchmarks || '[]'), 'flash_attention_benchmark.py') }}
         run: |
           cd benchmarks/triton_kernels_benchmark
-          python flash_attention_benchmark.py --reports $REPORTS
+          BENCHMARKING_METHOD="ELAPSED_TIME" python flash_attention_benchmark.py --reports $REPORTS
 
           source ../../scripts/capture-hw-details.sh
           python ../../scripts/build_report.py $REPORTS/attn-performance.csv $REPORTS/attn-triton-report.csv --benchmark attn --compiler triton --param_cols "Z,H,N_CTX,D_HEAD,CAUSAL,mode" --tflops_col Triton-TFlops --hbm_col "Triton-GB/s" --tag $TAG
@@ -230,7 +230,7 @@ jobs:
           cd benchmarks/triton_kernels_benchmark
           TRITON_INTEL_ADVANCED_PATH=1 \
           IGC_VISAOptions=" -enableBCR" \
-          python flash_attention_benchmark.py --reports $REPORTS
+          BENCHMARKING_METHOD="ELAPSED_TIME" python flash_attention_benchmark.py --reports $REPORTS
 
           TAG="${TAG}-adv"
           source ../../scripts/capture-hw-details.sh

@@ -531,14 +531,14 @@ attention = _attention.apply
                 for z in [1, 2, 4, 8, 16, 32]
                 for (h, dhead) in [(16, 128), (32, 64)]
                 for causal in [False, True]
-                for mode in ['bwd']]  #
-        + [[4, 48, 1024, 64, causal, mode] for causal in [False, True] for mode in ['bwd']],
+                for mode in ['fwd', 'bwd']]  #
+        + [[4, 48, 1024, 64, causal, mode] for causal in [False, True] for mode in ['fwd', 'bwd']],
         line_arg='provider',
         # argument name whose value corresponds to a different line in the plot
         # possible values for `line_arg``
-        line_vals=['xetla'],
+        line_vals=['triton', 'xetla'],
         # label name for the lines
-        line_names=['XeTLA'],
+        line_names=['Triton', 'XeTLA'],
         # line styles
         styles=[('green', '-'), ('green', '--'), ('blue', '-'), ('blue', '--')],
         ylabel=['GB/s', 'TFlops'],  # label name for the y-axis
@@ -608,7 +608,6 @@ def benchmark(Z, H, N_CTX, D_HEAD, CAUSAL, mode, provider):
             l = torch.empty((size_ml, ), device='xpu', dtype=torch.float)
             xetla_fn = lambda: func(q, k, v, out, dropout_mask, bias, m, l, Z, H, D_HEAD, N_CTX, N_CTX, sm_scale)
         if mode == 'bwd':
-            # Todo: comfirm inputs to make compatiable
             module_name = f'flash_attn_bwd_causal_{CAUSAL}'.lower()
             func = getattr(xetla_kernel, module_name)
             grad_out = torch.empty_like(q, device='xpu', dtype=dtype, requires_grad=True)
@@ -624,10 +623,14 @@ def benchmark(Z, H, N_CTX, D_HEAD, CAUSAL, mode, provider):
             grad_key = torch.empty_like(k, device='xpu', dtype=dtype, requires_grad=True)
             grad_value = torch.empty_like(v, device='xpu', dtype=dtype, requires_grad=True)
             grad_bias = torch.empty_like(bias, device='xpu', dtype=dtype, requires_grad=True)
+            bias_strideB = -1
+            bias_strideN = -1
+            bias_strideF = -1
+            attn_mask_padding = 0
 
             xetla_fn = lambda: func(grad_out, q, k, v, bias, dropout, out, log_sumexp, workspace, grad_q_tmp, alpha,
                                     dropout_prob, grad_query, grad_key, grad_value, grad_bias, Z, H, D_HEAD, N_CTX,
-                                    N_CTX, bias_strideB=-1, bias_strideN=-1, bias_strideF=-1, attn_mask_padding=0)
+                                    N_CTX, bias_strideB, bias_strideN, bias_strideF, attn_mask_padding)
         _, min_ms, max_ms, mean, cv = benchmark_suit.do_bench(xetla_fn, n_warmup=10, n_repeat=10, quantiles=quantiles)
 
     else:
