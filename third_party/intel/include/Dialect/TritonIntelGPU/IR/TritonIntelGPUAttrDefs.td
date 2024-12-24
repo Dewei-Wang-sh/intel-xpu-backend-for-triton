@@ -1,5 +1,5 @@
-#ifndef TRITON_INTEL_GPU_ATTRDEFS
-#define TRITON_INTEL_GPU_ATTRDEFS
+#ifndef TTIG_ATTRDEFS
+#define TTIG_ATTRDEFS
 
 include "mlir/IR/AttrTypeBase.td"
 include "intel/include/Dialect/TritonIntelGPU/IR/TritonIntelGPUDialect.td"

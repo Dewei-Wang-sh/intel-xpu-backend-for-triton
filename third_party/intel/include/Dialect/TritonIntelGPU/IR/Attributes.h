@@ -1,5 +1,5 @@
-#ifndef TRITON_DIALECT_TRITON_INTEL_GPU_IR_ATTRIBUTES_H
-#define TRITON_DIALECT_TRITON_INTEL_GPU_IR_ATTRIBUTES_H
+#ifndef TRITON_DIALECT_TTIG_IR_ATTRIBUTES_H
+#define TRITON_DIALECT_TTIG_IR_ATTRIBUTES_H
 
 #include "triton/Dialect/TritonGPU/IR/Attributes.h"
 
@@ -10,4 +10,4 @@ class ModuleOp;
 #define GET_ATTRDEF_CLASSES
 #include "intel/include/Dialect/TritonIntelGPU/IR/TritonIntelGPUAttrDefs.h.inc"
 
-#endif // TRITON_DIALECT_TRITON_INTEL_GPU_IR_ATTRIBUTES_H
+#endif // TRITON_DIALECT_TTIG_IR_ATTRIBUTES_H

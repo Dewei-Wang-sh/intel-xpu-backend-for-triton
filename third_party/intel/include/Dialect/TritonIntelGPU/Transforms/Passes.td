@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef TRITON_INTEL_GPU_PASSES
-#define TRITON_INTEL_GPU_PASSES
+#ifndef TTIG_PASSES
+#define TTIG_PASSES
 
 include "mlir/Pass/PassBase.td"
 
@@ -435,4 +435,4 @@ def TritonIntelGPUAsyncBufferize
 }
 
 
-#endif // TRITON_INTEL_GPU_PASSES
+#endif // TTIG_PASSES

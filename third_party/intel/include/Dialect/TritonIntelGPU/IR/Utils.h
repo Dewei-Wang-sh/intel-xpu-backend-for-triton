@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef TRITON_DIALECT_TRITON_INTEL_GPU_IR_UTILS_H
-#define TRITON_DIALECT_TRITON_INTEL_GPU_IR_UTILS_H
+#ifndef TRITON_DIALECT_TTIG_IR_UTILS_H
+#define TRITON_DIALECT_TTIG_IR_UTILS_H
 
 #include "intel/include/Analysis/AxisInfo.h"
 #include "mlir/IR/Operation.h"
@@ -48,4 +48,4 @@ inline bool applyTransposedReduction() {
 }
 } // namespace mlir::triton::gpu::intel
 
-#endif // TRITON_DIALECT_TRITON_INTEL_GPU_IR_UTILS_H
+#endif // TRITON_DIALECT_TTIG_IR_UTILS_H

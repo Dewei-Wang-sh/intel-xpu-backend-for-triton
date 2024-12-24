@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef TRITON_INTEL_GPU_OPSDEFS
-#define TRITON_INTEL_GPU_OPSDEFS
+#ifndef TTIG_OPSDEFS
+#define TTIG_OPSDEFS
 
 include "triton/Dialect/Triton/IR/TritonTypes.td"
 include "triton/Dialect/Triton/IR/TritonAttrDefs.td"
@@ -57,7 +57,7 @@ def TTIG_AsyncCopyLocalToGlobalOp : TTIG_Op<"async_copy_local_to_global", [Decla
   }];
 }
 
-def TTIG_AsyncDotOp : TTIG_Op<"async_dot", [DotLike,
+def TTIG_AsyncDotOp : TTIG_Op<"async_dot", [//DotLike,
                                             DeclareOpInterfaceMethods<MemoryEffectsOpInterface>]> {
   let summary = "work group asynchronous dot";
   let arguments = (ins TT_TensorPtr:$a, TT_TensorPtr:$b, TT_TensorPtr:$c, Optional<TT_Tensor>:$init);

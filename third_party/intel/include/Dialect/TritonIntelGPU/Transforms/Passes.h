@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef TRITON_DIALECT_TRITON_INTEL_GPU_TRANSFORMS_PASSES_H
-#define TRITON_DIALECT_TRITON_INTEL_GPU_TRANSFORMS_PASSES_H
+#ifndef TRITON_DIALECT_TTIG_TRANSFORMS_PASSES_H
+#define TRITON_DIALECT_TTIG_TRANSFORMS_PASSES_H
 
 #include "mlir/Pass/Pass.h"
 
@@ -31,4 +31,4 @@ struct ClusterInfo {
 #include "intel/include/Dialect/TritonIntelGPU/Transforms/Passes.h.inc"
 } // namespace mlir::triton::gpu::intel
 
-#endif // TRITON_DIALECT_TRITON_INTEL_GPU_TRANSFORMS_PASSES_H
+#endif // TRITON_DIALECT_TTIG_TRANSFORMS_PASSES_H

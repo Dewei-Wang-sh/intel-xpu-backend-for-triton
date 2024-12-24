@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef TRITON_DIALECT_TRITON_INTEL_GPU_IR_DIALECT_H
-#define TRITON_DIALECT_TRITON_INTEL_GPU_IR_DIALECT_H
+#ifndef TRITON_DIALECT_TTIG_IR_DIALECT_H
+#define TRITON_DIALECT_TTIG_IR_DIALECT_H
 
 #include "triton/Dialect/TritonGPU/IR/Dialect.h"
 
@@ -18,4 +18,4 @@
 #define GET_OP_CLASSES
 #include "intel/include/Dialect/TritonIntelGPU/IR/Ops.h.inc"
 
-#endif // TRITON_DIALECT_TRITON_INTEL_GPU_IR_DIALECT_H
+#endif // TRITON_DIALECT_TTIG_IR_DIALECT_H
