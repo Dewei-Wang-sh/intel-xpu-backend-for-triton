@@ -11,6 +11,7 @@
 
 include "triton/Dialect/Triton/IR/TritonTypes.td"
 include "triton/Dialect/Triton/IR/TritonAttrDefs.td"
+include "triton/Dialect/Triton/IR/TritonOpInterfaces.td"
 include "triton/Dialect/TritonGPU/IR/TritonGPUTypes.td"
 include "intel/include/Dialect/TritonIntelGPU/IR/TritonIntelGPUAttrDefs.td"
 include "intel/include/Dialect/TritonIntelGPU/IR/TritonIntelGPUDialect.td"
@@ -20,8 +21,12 @@ class TTIG_Op<string mnemonic, list<Trait> traits = []> :
     Op<TritonIntelGPU_Dialect, mnemonic, traits>;
 
 def TT_TensorOrTensorPtr : AnyTypeOf<[TT_Tensor, TT_TensorPtr]>;
+def TTIG_BarrierType : TT_PtrOf<[I64]>;
 
-def TTIG_AllocOp : TTIG_Op<"alloc", [MemoryEffects<[MemAlloc]>]> {
+def GlobalMemory : Resource<"::mlir::triton::GlobalMemory">;
+def SharedMemory : Resource<"::mlir::triton::gpu::SharedMemory">;
+
+def TTIG_AllocOp : TTIG_Op<"alloc", [MemoryEffects<[MemAlloc<SharedMemory>]>]> {
   let summary = "Memory allocation operation";
   let description = [{
     The `alloc` operation allocates a region of memory as specified by its type.
@@ -35,6 +40,56 @@ def TTIG_AllocOp : TTIG_Op<"alloc", [MemoryEffects<[MemAlloc]>]> {
     attr-dict `:` type($result)
   }];
 }
+
+def TTIG_AsyncCopyGlobalToLocalOp : TTIG_Op<"async_copy_global_to_local", [DeclareOpInterfaceMethods<MemoryEffectsOpInterface>]> {
+  let summary = "copy data based on block ptr from global memory to local memory asynchronously";
+  let arguments = (ins TT_TensorPtr:$global, TT_TensorPtr:$local);
+  let assemblyFormat = [{ 
+    operands attr-dict `:` type($global) `->` type($local)
+  }];
+}
+
+def TTIG_AsyncCopyLocalToGlobalOp : TTIG_Op<"async_copy_local_to_global", [DeclareOpInterfaceMethods<MemoryEffectsOpInterface>]> {
+  let summary = "copy data based on block ptr from local memory to global memory asynchronously";
+  let arguments = (ins TT_TensorPtr:$global, TT_TensorPtr:$local);
+  let assemblyFormat = [{ 
+    operands attr-dict `:` type($local) `->` type($global)
+  }];
+}
+
+def TTIG_AsyncDotOp : TTIG_Op<"async_dot", [DotLike,
+                                            DeclareOpInterfaceMethods<MemoryEffectsOpInterface>]> {
+  let summary = "work group asynchronous dot";
+  let arguments = (ins TT_TensorPtr:$a, TT_TensorPtr:$b, TT_TensorPtr:$c, Optional<TT_Tensor>:$init);
+  let assemblyFormat = [{ 
+    operands attr-dict `:` type($a) `*` type($b) (`+` type($init)^)? `->` type($c)
+  }];
+}
+
+def TTIG_BarrierAllocOp : TTIG_Op<"barrier_alloc"> {
+  let summary = "barrier allocation operation";
+  let results = (outs TTIG_BarrierType:$barrier);
+  let assemblyFormat = [{
+    attr-dict `:` type($barrier)
+  }];
+}
+
+def TTIG_BarrierArriveOp : TTIG_Op<"barrier_arrive"> {
+  let summary = "barrier arrive operation";
+  let arguments = (ins TTIG_BarrierType:$barrier, Variadic<TT_TensorPtr>:$srcs);
+  let assemblyFormat = [{
+    $barrier `,` $srcs attr-dict `:` type($barrier) `,` type($srcs)
+  }];
+}
+
+def TTIG_BarrierWaitOp : TTIG_Op<"barrier_wait"> {
+  let summary = "barrier wait operation";
+  let arguments = (ins TTIG_BarrierType:$barrier, I32:$phase);
+  let assemblyFormat = [{
+    $barrier `,` $phase attr-dict `:` type($barrier)
+  }];
+}
+
 
 def TTIG_GlueOp : TTIG_Op<"glue", [Pure]> {
   let summary = "Tensor glueing operation";

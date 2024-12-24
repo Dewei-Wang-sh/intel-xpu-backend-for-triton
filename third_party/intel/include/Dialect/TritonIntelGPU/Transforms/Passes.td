@@ -422,5 +422,17 @@ module attributes {"ttg.num-ctas" = 1 : i32, "ttg.num-warps" = 1 : i32, "ttg.thr
   let dependentDialects = [];
 }
 
+def TritonIntelGPUAsyncBufferize
+    : Pass<"tritonintelgpu-async-bufferize", "mlir::ModuleOp"> {
+  let summary = "bufferize load/store/dot to async operations";
+
+  let description = [{
+  }];
+
+  let dependentDialects = ["mlir::triton::TritonDialect",
+                           "mlir::triton::gpu::intel::TritonIntelGPUDialect",
+                          ];
+}
+
 
 #endif // TRITON_INTEL_GPU_PASSES

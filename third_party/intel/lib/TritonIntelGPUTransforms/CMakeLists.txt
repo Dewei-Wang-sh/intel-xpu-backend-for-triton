@@ -1,5 +1,6 @@
 add_triton_library(TritonIntelGPUTransforms
   AccelerateMatmul.cpp
+  AsyncBufferize.cpp
   Coalesce.cpp
   DistributeToWarps.cpp
   MatchTargetSize.cpp

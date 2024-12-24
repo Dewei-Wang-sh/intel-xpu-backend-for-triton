@@ -86,6 +86,37 @@ static unsigned getDimSize(Type type, unsigned dim) {
 
 namespace mlir::triton::gpu::intel {
 
+void AsyncCopyGlobalToLocalOp::getEffects(
+    SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>
+        &effects) {
+  effects.emplace_back(MemoryEffects::Read::get(), &getGlobalMutable(),
+                       mlir::triton::GlobalMemory::get());
+  effects.emplace_back(MemoryEffects::Write::get(), &getLocalMutable(),
+                       mlir::triton::gpu::SharedMemory::get());
+}
+
+void AsyncCopyLocalToGlobalOp::getEffects(
+    SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>
+        &effects) {
+  effects.emplace_back(MemoryEffects::Write::get(), &getGlobalMutable(),
+                       mlir::triton::GlobalMemory::get());
+  effects.emplace_back(MemoryEffects::Read::get(), &getLocalMutable(),
+                       mlir::triton::gpu::SharedMemory::get());
+}
+
+void AsyncDotOp::getEffects(
+    SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>
+        &effects) {
+  effects.emplace_back(MemoryEffects::Read::get(), &getAMutable(),
+                       mlir::triton::gpu::SharedMemory::get());
+  effects.emplace_back(MemoryEffects::Read::get(), &getBMutable(),
+                       mlir::triton::gpu::SharedMemory::get());
+  effects.emplace_back(MemoryEffects::Read::get(), &getCMutable(), 0, true,
+                       mlir::triton::gpu::SharedMemory::get());
+  effects.emplace_back(MemoryEffects::Write::get(), &getCMutable(), 1, true,
+                       mlir::triton::gpu::SharedMemory::get());
+}
+
 LogicalResult GlueOp::verify() {
   SmallVector<Type> inputTypes;
   for (Value input : getOperands())
