@@ -61,6 +61,7 @@ def TTIG_AsyncDotOp : TTIG_Op<"async_dot", [//DotLike,
                                             DeclareOpInterfaceMethods<MemoryEffectsOpInterface>]> {
   let summary = "work group asynchronous dot";
   let arguments = (ins TT_TensorPtr:$a, TT_TensorPtr:$b, TT_TensorPtr:$c, Optional<TT_Tensor>:$init);
+  //let arguments = (ins TT_TensorPtr:$a, TT_TensorPtr:$b, TT_TensorPtr:$c, Optional<I1>:$useC);
   let assemblyFormat = [{ 
     operands attr-dict `:` type($a) `*` type($b) (`+` type($init)^)? `->` type($c)
   }];

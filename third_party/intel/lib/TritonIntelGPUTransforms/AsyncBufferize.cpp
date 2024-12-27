@@ -56,6 +56,7 @@ struct DotInfo {
   ttgi::AllocOp bufC;
   void dump() {
     dot.dump();
+    LDBG("\n");
     LDBG("***** chain ops of dotA *****");
     for (auto val : chainOpsA)
       val.dump();
@@ -111,11 +112,6 @@ bool isTensorPtrOfAddrSpace(Value ptr, unsigned addrSpace = 1) {
 }
 
 Operation *getImmDom(Value ptr, Operation *op) {
-  // SmallSetVector<Operation *> otherUsers;
-  // for (auto users : ptr.getUsers()) {
-  //   if (user != op)
-  //     otherUsers.insert(user);
-  // }
   DominanceInfo dom(op->getParentOfType<tt::FuncOp>());
   for (auto candidate : ptr.getUsers()) {
     if (dom.properlyDominates(candidate, op)) {
@@ -235,7 +231,6 @@ public:
               auto newLoad =
                   b.create<tt::LoadOp>(loc, bufC, tt::CacheModifier::NONE,
                                        tt::EvictionPolicy::NORMAL, false);
-              // loop.getResults()[argNo].replaceAllUsesWith(newLoad.getResult());
               toReplace.push_back(std::make_pair(loop.getResults()[argNo],
                                                  newLoad.getResult()));
             }
@@ -276,6 +271,7 @@ public:
         bufferMap[&ops] = buf;
       }
     };
+    // FIXME: add attribute to indicate the buffer can be multi-staged
     allocBuffer(loopDotInfo.dotInfo0.loadA, loopDotInfo.dotInfo0.chainOpsA);
     allocBuffer(loopDotInfo.dotInfo0.loadB, loopDotInfo.dotInfo0.chainOpsB);
     allocBuffer(loopDotInfo.dotInfo0.dot, loopDotInfo.dotInfo0.chainOpsC);
