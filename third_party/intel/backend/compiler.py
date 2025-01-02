@@ -15,6 +15,7 @@ import subprocess
 from pathlib import Path
 
 XE4 = 4
+PRE_XE4 = 0
 
 
 @functools.lru_cache()
@@ -144,6 +145,7 @@ class XPUBackend(BaseBackend):
             raise TypeError("target.arch is not a dict")
         self.properties = self.parse_target(target.arch)
         # FIXME: set device capability according to device properties
+        self.capability = PRE_XE4
         if ((os.getenv("TRITON_INTEL_ENABLE_XE4", "0") == "1")):
             self.capability = XE4
 

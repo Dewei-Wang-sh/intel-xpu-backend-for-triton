@@ -112,7 +112,10 @@ struct FuncOpConversion : public ConvertOpToLLVMPattern<triton::FuncOp> {
     auto mod = funcOp->getParentOfType<ModuleOp>();
     int threadsPerWarp = triton::gpu::TritonGPUDialect::getThreadsPerWarp(mod);
     if (LLVM::isKernel(funcOp)) {
-      newFuncOp.setCConv(LLVM::CConv::SPIR_KERNEL);
+      if (isXe4)
+        newFuncOp.setCConv(LLVM::CConv::SPIR_KERNEL);
+      else
+        newFuncOp.setCConv(LLVM::CConv::PISA_KERNEL);
       newFuncOp.setLinkage(LLVM::Linkage::External);
     }
 
@@ -268,6 +271,12 @@ public:
     populateGpuToLLVMSPVConversionPatterns(typeConverter, patterns);
     populateSPIRVToLLVMConversionPatterns(typeConverter, patterns,
                                           spirv::ClientAPI::OpenCL);
+    bool isXe4 = mlir::triton::tools::getBoolEnv("TRITON_INTEL_ENABLE_XE4");
+    if (isXe4) {
+      // ttg/ttig/gpu dialect to llvm
+      intel::populateXe4ToLLVMPattern(typeConverter, patterns, targetInfo,
+                                      benefit);
+    }
   }
 
 private:
