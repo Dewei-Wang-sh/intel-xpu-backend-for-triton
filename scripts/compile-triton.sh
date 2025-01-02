@@ -168,6 +168,7 @@ build_triton() {
   echo "**** Configuring $TRITON_PROJ ****"
   cd $TRITON_PROJ
 
+  export LLVM_SYSPATH=/home/gta/deweiwang/llvm-project/build
   if [ "$BUILD_LLVM" = true ]; then
     export LLVM_SYSPATH=$PACKAGES_DIR/llvm
   fi
