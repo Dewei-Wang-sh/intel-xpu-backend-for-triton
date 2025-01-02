@@ -15,6 +15,7 @@ import subprocess
 from pathlib import Path
 
 XE4 = 4
+PRE_XE4 = 0
 
 
 @functools.lru_cache()
@@ -30,7 +31,10 @@ def _path_to_binary(binary: str):
         if os.path.exists(bin) and os.path.isfile(bin):
             result = subprocess.check_output([bin, "--version"], stderr=subprocess.STDOUT)
             if result is not None:
-                version = re.search(r".*SPIRV-Tools v(\d+\.\d+).*", result.decode("utf-8"), flags=re.MULTILINE)
+                if binary == 'llc':
+                    version = re.search(r".*LLVM version (\d+\.\d+).*", result.decode("utf-8"), flags=re.MULTILINE)
+                else:
+                    version = re.search(r".*SPIRV-Tools v(\d+\.\d+).*", result.decode("utf-8"), flags=re.MULTILINE)
                 if version is not None:
                     return p, version.group(1)
     raise RuntimeError(f"Cannot find {binary}")
@@ -121,19 +125,6 @@ class XPUBackend(BaseBackend):
             pm.run(mod)
             return mod
 
-    class XE4:
-
-        @staticmethod
-        def make_ttgir(mod, metadata, opt):
-            pm = ir.pass_manager(mod.context)
-            pm.enable_debug()
-
-            passes.ttir.add_convert_to_ttgpuir(pm, "xpu", opt.num_warps, opt.threads_per_warp, opt.num_ctas)
-            passes.ttgpuir.add_coalesce(pm)
-            passes.ttgpuir.add_remove_layout_conversions(pm)
-            pm.run(mod)
-            return mod
-
     @staticmethod
     def supports_target(target: tuple):
         return target.backend == 'xpu'
@@ -144,6 +135,7 @@ class XPUBackend(BaseBackend):
             raise TypeError("target.arch is not a dict")
         self.properties = self.parse_target(target.arch)
         # FIXME: set device capability according to device properties
+        self.capability = PRE_XE4
         if ((os.getenv("TRITON_INTEL_ENABLE_XE4", "0") == "1")):
             self.capability = XE4
 
@@ -240,16 +232,12 @@ class XPUBackend(BaseBackend):
             ir.source_mgr_diag(srcMgr, mod.context)
             mod.context.printOpOnDiagnostic(True)
 
-        # if (capability >= XE4):
-        #     metadata["cluster_dims"] = (cluster_info.clusterDimX, cluster_info.clusterDimY, cluster_info.clusterDimZ)
-        #     return XPUBackend.XE4.make_ttgir(mod, metadata, opt)
-
         # Annotate module with information required by subsequent transformations.
         pm = ir.pass_manager(mod.context)
         pm.enable_debug()
         intel.passes.ttgpuir.add_triton_annotate_module(pm, min(properties["sub_group_sizes"]),
-                                                        True, #properties["has_subgroup_2d_block_io"],
-                                                        True, #properties["has_subgroup_matrix_multiply_accumulate"],
+                                                        properties["has_subgroup_2d_block_io"],
+                                                        properties["has_subgroup_matrix_multiply_accumulate"],
                                                         properties["has_bfloat16_conversions"], opt.threads_per_warp)
         pm.run(mod)
 
@@ -260,7 +248,8 @@ class XPUBackend(BaseBackend):
         pm = ir.pass_manager(mod.context)
         pm.enable_debug()
 
-        if ((os.getenv("TRITON_INTEL_ADVANCED_PATH", "0") == "1" or opt.advanced_path)):
+        if (properties["has_subgroup_2d_block_io"] and properties["has_subgroup_matrix_multiply_accumulate"]
+                and (os.getenv("TRITON_INTEL_ADVANCED_PATH", "0") == "1" or opt.advanced_path)):
             return XPUBackend.AdvancedPath.make_ttgir(mod, metadata, opt)
 
         passes.ttir.add_convert_to_ttgpuir(pm, "xpu", opt.num_warps, opt.threads_per_warp, opt.num_ctas)
@@ -420,11 +409,13 @@ class XPUBackend(BaseBackend):
             return zebin
         return spirv
 
-    def make_xebin(src, metadata, opt):
+    @staticmethod
+    def make_xebin(src, metadata):
         # Find kernel names (there should only be one)
         names = re.findall(r"pisa_kernel void @([a-zA-Z_][a-zA-Z0-9_]*)", src)
         assert len(names) == 1
         metadata["name"] = names[0]
+        metadata["build_flags"] = ""
 
         llc, _ = _path_to_binary("llc")
         with tempfile.NamedTemporaryFile(delete=False, mode='w', suffix='.ll') as fsrc, \
@@ -433,7 +424,7 @@ class XPUBackend(BaseBackend):
             fsrc.flush()
             name, _ = os.path.splitext(fsrc.name)
             fbin = name + '.pisa.o'
-            cmd = [llc, '-march=xe', fsrc.name, '-o', fbin]
+            cmd = [llc, '-march=xe', '-filetype=obj', fsrc.name, '-o', fbin]
             try:
                 subprocess.run(cmd, check=True, close_fds=False, stderr=flog)
                 if os.path.exists(fsrc.name):
@@ -445,18 +436,18 @@ class XPUBackend(BaseBackend):
                     log = log_file.read()
                 if os.path.exists(flog.name):
                     os.remove(flog.name)
-                
+
                 if e.returncode == 255:
                     error = 'Internal Triton llc codegen error'
                 elif e.returncode == 128 + signal.SIGSEGV:
                     error = '`llc` raised SIGSEGV'
                 else:
                     error = f'`llc` failed with error code {e.returncode}'
-                
+
                 raise RuntimeError(f"{error}\n"
                                    f"`llc` stderr:\n{log}\n"
                                    f'Repro command: {" ".join(cmd)}\n')
-            with open(fbin, 'r') as f:
+            with open(fbin, 'rb') as f:
                 fbin = f.read()
             if os.path.exists(fbin):
                 os.remove(fbin)
@@ -468,7 +459,7 @@ class XPUBackend(BaseBackend):
         stages["ttgir"] = lambda src, metadata: self.make_ttgir(src, metadata, options, self.properties, self.capability)
         stages["llir"] = lambda src, metadata: self.make_llir(src, metadata, options, self.capability)
         if self.capability >= XE4:
-            stages["xebin"] = lambda src, metadata: self.make_xebin(src, metadata, options)
+            stages["xebin"] = lambda src, metadata: self.make_xebin(src, metadata)
         else:
             stages["spv"] = lambda src, metadata: self.make_spv(src, metadata, options)
 

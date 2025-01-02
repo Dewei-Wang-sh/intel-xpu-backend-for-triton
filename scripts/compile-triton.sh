@@ -168,9 +168,10 @@ build_triton() {
   echo "**** Configuring $TRITON_PROJ ****"
   cd $TRITON_PROJ
 
-  if [ "$BUILD_LLVM" = true ]; then
-    export LLVM_SYSPATH=$PACKAGES_DIR/llvm
-  fi
+  export LLVM_SYSPATH=/root/working_dir/drivers.gpu.compiler.llvm-pisa/build
+  #if [ "$BUILD_LLVM" = true ]; then
+  #  export LLVM_SYSPATH=$PACKAGES_DIR/llvm
+  #fi
   export DEBUG=1
   if [ "$CCACHE" = true ]
   then

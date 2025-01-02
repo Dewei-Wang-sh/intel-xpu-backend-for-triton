@@ -251,6 +251,10 @@ if(TRITON_BUILD_PYTHON_MODULE)
     # LLVMNVPTXAsmPrinter
     LLVMAMDGPUCodeGen
     LLVMAMDGPUAsmParser
+    LLVMXeCodeGen
+    LLVMXeAsmParser
+    LLVMpISACodeGen
+    LLVMpISAAsmParser
 
     Python3::Module
     pybind11::headers
